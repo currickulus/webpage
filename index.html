@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Currickulus - Index</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            margin: 0;
-            padding: 0;
             height: 100vh;
             overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
             background-color: #000;
+            font-family: 'Courier New', monospace;
         }
         #image-container {
             position: relative;
@@ -41,143 +41,372 @@
             z-index: 5;
         }
         .grid-cell {
-            border: 1px solid rgba(255, 255, 255, 0);
-            background-color: rgba(0, 255, 0, 0);
+            border: 1px solid rgba(255,255,255,0);
+            background-color: rgba(0,255,0,0);
             cursor: pointer;
             pointer-events: auto;
             transition: background-color 0.3s;
         }
-        .grid-cell:hover {
-            background-color: rgba(0, 255, 0, 0.4);
-        }
-        #image-error {
+        .grid-cell:hover { background-color: rgba(0,255,0,0.15); }
+
+        /* ── Calculator Overlay ── */
+        .calc-overlay {
             display: none;
             position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: white;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-family: Arial, sans-serif;
-            font-size: 15px;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.7);
             z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+        .calc-overlay.open { display: flex; }
+        .calc-box {
+            background: #0a0a0a;
+            border: 1px solid #00ff00;
+            width: 320px;
+            padding: 0;
+            box-shadow: 0 0 40px rgba(0,255,0,0.2);
+        }
+        .calc-header {
+            background: #111;
+            border-bottom: 1px solid #00ff00;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #00ff00;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .calc-close {
+            cursor: pointer;
+            color: #ff3333;
+            font-size: 16px;
+            background: none;
+            border: none;
+            color: #ff3333;
+            font-family: 'Courier New', monospace;
+            line-height: 1;
+        }
+        .calc-display {
+            background: #000;
+            padding: 12px;
+            text-align: right;
+            border-bottom: 1px solid #222;
+        }
+        .calc-expr {
+            color: #555;
+            font-size: 11px;
+            min-height: 16px;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+        .calc-result {
+            color: #00ff00;
+            font-size: 28px;
+            min-height: 36px;
+            word-break: break-all;
+        }
+        .calc-buttons {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1px;
+            background: #111;
+            padding: 1px;
+        }
+        .cb {
+            background: #0d0d0d;
+            color: #00ff00;
+            border: none;
+            padding: 16px 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.15s;
             text-align: center;
         }
+        .cb:hover { background: #0d1f0d; }
+        .cb.op { color: #00cc00; }
+        .cb.action { color: #888; }
+        .cb.eq { color: #000; background: #00ff00; }
+        .cb.eq:hover { background: #00cc00; }
+        .cb.wide { grid-column: span 2; }
+
+        /* RPN stack display */
+        #rpn-stack {
+            background: #000;
+            border-bottom: 1px solid #222;
+            padding: 8px 12px;
+            min-height: 60px;
+            max-height: 80px;
+            overflow-y: auto;
+            font-size: 11px;
+            color: #555;
+        }
+        .stack-item { color: #00aa00; padding: 1px 0; text-align: right; }
+        .stack-item:last-child { color: #00ff00; }
     </style>
 </head>
 <body>
-    <div id="image-container">
-        <img id="background-image" src="fixed.png" alt="Background Image">
-        <div id="grid-overlay"></div>
-        <div id="image-error">Failed to load image. Using fallback dimensions.</div>
+<div id="image-container">
+    <img id="background-image" src="fixed.png" alt="Background Image">
+    <div id="grid-overlay"></div>
+</div>
+
+<!-- ── Infix Calculator ── -->
+<div class="calc-overlay" id="infix-overlay">
+    <div class="calc-box">
+        <div class="calc-header">
+            <span>infix calculator</span>
+            <button class="calc-close" onclick="closeCalc('infix')">✕</button>
+        </div>
+        <div class="calc-display">
+            <div class="calc-expr" id="infix-expr"></div>
+            <div class="calc-result" id="infix-result">0</div>
+        </div>
+        <div class="calc-buttons">
+            <button class="cb action" onclick="infixClear()">C</button>
+            <button class="cb action" onclick="infixDel()">⌫</button>
+            <button class="cb action" onclick="infixInput('%')">%</button>
+            <button class="cb op"     onclick="infixInput('/')">÷</button>
+            <button class="cb"        onclick="infixInput('7')">7</button>
+            <button class="cb"        onclick="infixInput('8')">8</button>
+            <button class="cb"        onclick="infixInput('9')">9</button>
+            <button class="cb op"     onclick="infixInput('*')">×</button>
+            <button class="cb"        onclick="infixInput('4')">4</button>
+            <button class="cb"        onclick="infixInput('5')">5</button>
+            <button class="cb"        onclick="infixInput('6')">6</button>
+            <button class="cb op"     onclick="infixInput('-')">−</button>
+            <button class="cb"        onclick="infixInput('1')">1</button>
+            <button class="cb"        onclick="infixInput('2')">2</button>
+            <button class="cb"        onclick="infixInput('3')">3</button>
+            <button class="cb op"     onclick="infixInput('+')">+</button>
+            <button class="cb"        onclick="infixInput('(')"> ( </button>
+            <button class="cb"        onclick="infixInput('0')">0</button>
+            <button class="cb"        onclick="infixInput('.')">.</button>
+            <button class="cb eq"     onclick="infixEval()">=</button>
+            <button class="cb op wide" onclick="infixInput(')')"> ) </button>
+            <button class="cb op wide" onclick="infixInput('Math.sqrt(')">√</button>
+        </div>
     </div>
+</div>
 
-    <script>
-        const gridRows = 7;
-        const gridCols = 9;
+<!-- ── RPN (Postfix) Calculator ── -->
+<div class="calc-overlay" id="rpn-overlay">
+    <div class="calc-box">
+        <div class="calc-header">
+            <span>postfix · rpn calculator</span>
+            <button class="calc-close" onclick="closeCalc('rpn')">✕</button>
+        </div>
+        <div id="rpn-stack"></div>
+        <div class="calc-display">
+            <div class="calc-expr" id="rpn-expr">entry</div>
+            <div class="calc-result" id="rpn-input">0</div>
+        </div>
+        <div class="calc-buttons">
+            <button class="cb action" onclick="rpnClear()">C</button>
+            <button class="cb action" onclick="rpnDrop()">drop</button>
+            <button class="cb action" onclick="rpnDel()">⌫</button>
+            <button class="cb op"     onclick="rpnOp('/')">÷</button>
+            <button class="cb"        onclick="rpnDigit('7')">7</button>
+            <button class="cb"        onclick="rpnDigit('8')">8</button>
+            <button class="cb"        onclick="rpnDigit('9')">9</button>
+            <button class="cb op"     onclick="rpnOp('*')">×</button>
+            <button class="cb"        onclick="rpnDigit('4')">4</button>
+            <button class="cb"        onclick="rpnDigit('5')">5</button>
+            <button class="cb"        onclick="rpnDigit('6')">6</button>
+            <button class="cb op"     onclick="rpnOp('-')">−</button>
+            <button class="cb"        onclick="rpnDigit('1')">1</button>
+            <button class="cb"        onclick="rpnDigit('2')">2</button>
+            <button class="cb"        onclick="rpnDigit('3')">3</button>
+            <button class="cb op"     onclick="rpnOp('+')">+</button>
+            <button class="cb op"     onclick="rpnOp('sqrt')">√</button>
+            <button class="cb"        onclick="rpnDigit('0')">0</button>
+            <button class="cb"        onclick="rpnDigit('.')">.</button>
+            <button class="cb eq"     onclick="rpnEnter()">ENTER</button>
+            <button class="cb op wide" onclick="rpnOp('swap')">swap</button>
+            <button class="cb op wide" onclick="rpnNeg()">+/−</button>
+        </div>
+    </div>
+</div>
 
-        const img = document.getElementById('background-image');
-        const gridOverlay = document.getElementById('grid-overlay');
-        const imageError = document.getElementById('image-error');
+<script>
+    // ── Grid Setup ──────────────────────────────────────────────────────────
+    const gridRows = 7;
+    const gridCols = 9;
+    const img = document.getElementById('background-image');
+    const gridOverlay = document.getElementById('grid-overlay');
 
-        function setupGrid() {
-            gridOverlay.innerHTML = '';
-
-            const imgRect = img.getBoundingClientRect();
-            let displayedWidth = imgRect.width;
-            let displayedHeight = imgRect.height;
-            let useFallback = false;
-
-            if (displayedWidth === 0 || displayedHeight === 0 || !img.complete || img.naturalWidth === 0) {
-                console.warn('Image dimensions invalid or image not loaded. Using viewport dimensions as fallback.');
-                displayedWidth = window.innerWidth;
-                displayedHeight = window.innerHeight;
-                useFallback = true;
-                imageError.style.display = 'block';
-            } else {
-                imageError.style.display = 'none';
-            }
-
-            gridOverlay.style.width = `${displayedWidth}px`;
-            gridOverlay.style.height = `${displayedHeight}px`;
-            gridOverlay.style.left = `${imgRect.left || 0}px`;
-            gridOverlay.style.top = `${imgRect.top || 0}px`;
-            gridOverlay.style.gridTemplateColumns = `repeat(${gridCols}, 1fr)`;
-            gridOverlay.style.gridTemplateRows = `repeat(${gridRows}, 1fr)`;
-
-            for (let row = 0; row < gridRows; row++) {
-                for (let col = 0; col < gridCols; col++) {
-                    const cell = document.createElement('div');
-                    cell.classList.add('grid-cell');
-                    cell.dataset.row = row;
-                    cell.dataset.col = col;
-
-                    cell.addEventListener('click', () => handleGridAction(row, col));
-                    cell.addEventListener('touchend', (e) => {
-                        e.preventDefault();
-                        handleGridAction(row, col);
-                    });
-
-                    gridOverlay.appendChild(cell);
-                }
-            }
-
-            console.log(`Grid re-setup: ${gridCols}x${gridRows}, Rendered dimensions: ${displayedWidth}x${displayedHeight}, Fallback used: ${useFallback}`);
-        }
-
-        function handleGridAction(row, col) {
-            console.log(`Grid cell clicked: Row ${row + 1}, Column ${col + 1}`);
-
-            if (row === 3 && col === 4) {
-                window.location.href = 'auth.html';
-            } else if (row === 5 && col === 3) {
-                window.location.href = 'polyfit.html';
-            } else if (row === 0 && col === 4) {
-                window.location.href = 'sierpinski.html';
-	    } else if (row === 1 && col === 4) {
-		window.location.href = 'spinning_cube.html';
-            } else if (row === 5 && col === 5) {
-                window.location.href = 'unit-circle.html';
-            } else if (row === 5 && col === 6) {
-                window.location.href = 'mortar_simulator.html';
-            } else if (row === 2 && col === 4) {
-                if (localStorage.getItem('token')) {
-                    window.location.href = 'terminal.html';
-                } else {
-                    alert('Please log in to access the terminal.');
-                    window.location.href = 'auth.html';
-                }
-            } else if (row === 4 && col === 4) {
-                if (localStorage.getItem('token')) {
-                    window.location.href = 'file-browser.html';
-                } else {
-                    alert('Please log in to access the file browser.');
-                    window.location.href = 'auth.html';
-                }
+    function setupGrid() {
+        gridOverlay.innerHTML = '';
+        const imgRect = img.getBoundingClientRect();
+        let w = imgRect.width  || window.innerWidth;
+        let h = imgRect.height || window.innerHeight;
+        gridOverlay.style.width  = w + 'px';
+        gridOverlay.style.height = h + 'px';
+        gridOverlay.style.left   = (imgRect.left || 0) + 'px';
+        gridOverlay.style.top    = (imgRect.top  || 0) + 'px';
+        gridOverlay.style.gridTemplateColumns = 'repeat(' + gridCols + ', 1fr)';
+        gridOverlay.style.gridTemplateRows    = 'repeat(' + gridRows + ', 1fr)';
+        for (let r = 0; r < gridRows; r++) {
+            for (let c = 0; c < gridCols; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('grid-cell');
+                cell.addEventListener('click',    () => handleGrid(r, c));
+                cell.addEventListener('touchend', (e) => { e.preventDefault(); handleGrid(r, c); });
+                gridOverlay.appendChild(cell);
             }
         }
+    }
 
-        function initializePageOnLoad() {
-            if (img.complete && img.naturalWidth && img.naturalHeight) {
-                console.log('Image already loaded on page load, setting up grid.');
-                setupGrid();
-            } else {
-                console.log('Waiting for image to load, then setting up grid.');
-                img.onload = () => {
-                    console.log('Image loaded, setting up grid.');
-                    setupGrid();
-                };
-                img.onerror = () => {
-                    console.error('Failed to load image: fixed.png. Setting up grid with fallback dimensions.');
-                    setupGrid();
-                };
-            }
+    function handleGrid(row, col) {
+        const token = localStorage.getItem('token');
+        // row 0 col 0 — RPN calculator (top left)
+        if (row === 0 && col === 0) { openCalc('rpn'); return; }
+        // row 0 col 8 — Infix calculator (top right)
+        if (row === 0 && col === 8) { openCalc('infix'); return; }
+        // row 0 col 4 — Sierpinski
+        if (row === 0 && col === 4) { window.location.href = 'sierpinski.html'; return; }
+        // row 1 col 4 — Spinning cube
+        if (row === 1 && col === 4) { window.location.href = 'spinning_cube.html'; return; }
+        // row 2 col 4 — Terminal (auth required)
+        if (row === 2 && col === 4) {
+            if (token) { window.location.href = 'terminal.html'; }
+            else { window.location.href = 'auth.html'; }
+            return;
         }
+        // row 3 col 4 — Auth
+        if (row === 3 && col === 4) { window.location.href = 'auth.html'; return; }
+        // row 4 col 4 — File browser (auth required)
+        if (row === 4 && col === 4) {
+            if (token) { window.location.href = 'file-browser.html'; }
+            else { window.location.href = 'auth.html'; }
+            return;
+        }
+        // row 5 col 3 — Polyfit
+        if (row === 5 && col === 3) { window.location.href = 'polyfit.html'; return; }
+        // row 5 col 5 — Unit circle
+        if (row === 5 && col === 5) { window.location.href = 'unit-circle.html'; return; }
+        // row 5 col 6 — Mortar simulator
+        if (row === 5 && col === 6) { window.location.href = 'mortar_simulator.html'; return; }
+    }
 
-        initializePageOnLoad();
-        window.addEventListener('resize', setupGrid);
-    </script>
+    img.complete ? setupGrid() : img.onload = setupGrid;
+    img.onerror = setupGrid;
+    window.addEventListener('resize', setupGrid);
+
+    // ── Calc helpers ────────────────────────────────────────────────────────
+    function openCalc(id) {
+        document.getElementById(id + '-overlay').classList.add('open');
+    }
+    function closeCalc(id) {
+        document.getElementById(id + '-overlay').classList.remove('open');
+    }
+    // Close on backdrop click
+    document.querySelectorAll('.calc-overlay').forEach(el => {
+        el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+    });
+
+    // ── Infix Calculator ────────────────────────────────────────────────────
+    let infixExpr = '';
+    function infixInput(ch) {
+        infixExpr += ch;
+        document.getElementById('infix-expr').textContent = infixExpr;
+        try {
+            const r = Function('"use strict"; return (' + infixExpr + ')')();
+            document.getElementById('infix-result').textContent = isFinite(r) ? +r.toFixed(10) : r;
+        } catch { document.getElementById('infix-result').textContent = '...'; }
+    }
+    function infixEval() {
+        try {
+            const r = Function('"use strict"; return (' + infixExpr + ')')();
+            document.getElementById('infix-result').textContent = isFinite(r) ? +r.toFixed(10) : r;
+            infixExpr = String(isFinite(r) ? +r.toFixed(10) : r);
+            document.getElementById('infix-expr').textContent = '';
+        } catch { document.getElementById('infix-result').textContent = 'Error'; }
+    }
+    function infixClear() {
+        infixExpr = '';
+        document.getElementById('infix-expr').textContent = '';
+        document.getElementById('infix-result').textContent = '0';
+    }
+    function infixDel() {
+        infixExpr = infixExpr.slice(0, -1);
+        document.getElementById('infix-expr').textContent = infixExpr;
+    }
+
+    // ── RPN Calculator ──────────────────────────────────────────────────────
+    let rpnStack = [];
+    let rpnCurrent = '0';
+    let rpnFresh = true;
+
+    function rpnRender() {
+        const stackEl = document.getElementById('rpn-stack');
+        stackEl.innerHTML = rpnStack.map(n => '<div class="stack-item">' + n + '</div>').join('');
+        stackEl.scrollTop = stackEl.scrollHeight;
+        document.getElementById('rpn-input').textContent = rpnCurrent;
+    }
+    function rpnDigit(d) {
+        if (rpnFresh) { rpnCurrent = (d === '.') ? '0.' : d; rpnFresh = false; }
+        else if (d === '.' && rpnCurrent.includes('.')) return;
+        else rpnCurrent += d;
+        rpnRender();
+    }
+    function rpnEnter() {
+        rpnStack.push(parseFloat(rpnCurrent));
+        rpnFresh = true;
+        rpnRender();
+    }
+    function rpnOp(op) {
+        if (op === 'sqrt') {
+            if (!rpnFresh) rpnStack.push(parseFloat(rpnCurrent));
+            const a = rpnStack.pop();
+            if (a === undefined) return;
+            rpnCurrent = String(+Math.sqrt(a).toFixed(10));
+            rpnFresh = true;
+            rpnRender();
+            return;
+        }
+        if (op === 'swap') {
+            if (!rpnFresh) rpnStack.push(parseFloat(rpnCurrent));
+            if (rpnStack.length < 2) return;
+            const a = rpnStack.pop(), b = rpnStack.pop();
+            rpnStack.push(a); rpnStack.push(b);
+            rpnCurrent = String(rpnStack[rpnStack.length - 1]);
+            rpnRender();
+            return;
+        }
+        if (!rpnFresh) rpnStack.push(parseFloat(rpnCurrent));
+        if (rpnStack.length < 2) return;
+        const b = rpnStack.pop(), a = rpnStack.pop();
+        let r;
+        if (op === '+') r = a + b;
+        else if (op === '-') r = a - b;
+        else if (op === '*') r = a * b;
+        else if (op === '/') r = b !== 0 ? a / b : 'err';
+        rpnCurrent = typeof r === 'number' ? String(+r.toFixed(10)) : r;
+        rpnFresh = true;
+        rpnRender();
+    }
+    function rpnClear() { rpnStack = []; rpnCurrent = '0'; rpnFresh = true; rpnRender(); }
+    function rpnDrop() {
+        if (!rpnFresh) { rpnCurrent = rpnStack.length ? String(rpnStack.pop()) : '0'; rpnFresh = true; }
+        else if (rpnStack.length) rpnCurrent = String(rpnStack.pop());
+        rpnRender();
+    }
+    function rpnDel() {
+        if (rpnFresh) return;
+        rpnCurrent = rpnCurrent.slice(0, -1) || '0';
+        rpnRender();
+    }
+    function rpnNeg() {
+        rpnCurrent = String(-parseFloat(rpnCurrent));
+        rpnRender();
+    }
+
+    rpnRender();
+</script>
 </body>
 </html>
