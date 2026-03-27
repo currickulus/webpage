@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thomas Dewing \u2013 Resume</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink: #1a1a1a;
+    --mid: #444;
+    --light: #777;
+    --rule: #c8c0b4;
+    --accent: #2a4a6b;
+    --bg: #faf9f7;
+    --serif: 'EB Garamond', Georgia, serif;
+    --sans: 'DM Sans', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13.5px;
+    line-height: 1.55;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    max-width: 820px;
+    margin: 32px auto;
+    background: #fff;
+    padding: 52px 60px 56px;
+    box-shadow: 0 2px 24px rgba(0,0,0,0.08);
+  }
+
+  /* HEADER */
+  header {
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 18px;
+    margin-bottom: 22px;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: 36px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+  }
+
+  .tagline {
+    font-size: 13px;
+    color: var(--mid);
+    margin-top: 4px;
+    font-weight: 300;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .contact {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    font-size: 12.5px;
+    color: var(--mid);
+  }
+
+  .contact a { color: var(--accent); text-decoration: none; }
+  .contact a:hover { text-decoration: underline; }
+
+  /* SECTIONS */
+  section { margin-bottom: 22px; }
+
+  .section-title {
+    font-family: var(--serif);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+  }
+
+  /* SUMMARY */
+  .summary p {
+    color: var(--mid);
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+
+  /* SKILLS GRID */
+  .skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 30px;
+  }
+
+  .skill-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .skill-label {
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+    min-width: 110px;
+    font

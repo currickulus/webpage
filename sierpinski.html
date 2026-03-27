@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WebGL Chaos Game Sierpinski - Descent into Lower Right</title>
+<style>
+  body { margin:0; overflow:hidden; background:#000; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+<script>
+// Get canvas and WebGL context
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl');
+if (!gl) {
+  alert('WebGL not supported');
+}
+// Resize canvas to full window
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
+// Vertex shader with zoom and zoom center
+const vsSource = `
+  attribute vec2 a_position;
+  uniform float u_zoom;
+  uniform vec2 u_zoom_center;
+  void main() {
+    vec2 zoomed = (a_position - u_zoom_center) * u_zoom + u_zoom_center;
+    vec2 zeroToOne = zoomed;
+    vec2 zeroToTwo = zeroToOne * 2.0;
+    vec2 clipSpace = zeroToTwo - 1.0;
+    gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+    gl_PointSize = 1.5;
+  }
+`;
+// Fragment shader — glowing white points on black
+const fsSource = `
+  precision mediump float;
+  void main() {
+    gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+  }
+`;
+// Compile shader
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
+const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+const program = gl.createProgram();
+gl.attachShader(program, vertexShader);
+gl.attachShader(program, fragmentShader);
+gl.linkProgram(program);
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+  console.error(gl.getProgramInfoLog(program));
+}
+gl.useProgram(program);
+// Attributes & uniforms
+const positionLoc = gl.getAttribLocation(program, 'a_position');
+const zoomLoc = gl.getUniformLocation(program, 'u_zoom');
+const zoomCenterLoc = gl.getUniformLocation(program, 'u_zoom_center');
+const positionBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+gl.enableVertexAttribArray(positionLoc);
+gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+// Custom attractors
+const attractors = new Float32Array([
+  0.00, 0.75, // top
+  -0.65, -0.375, // bottom-left
+  0.65, -0.375 // bottom-right
+]);
+// Normalization params
+const minX = -0.65, maxX = 0.65, minY = -0.375, maxY = 0.75;
+const rangeX = maxX - minX;
+const rangeY = maxY - minY;
+// Current point (start near center)
+let current = { x: 0.0, y: 0.0 };
+// Points buffer in normalized [0,1], y flipped (0 top, 1 bottom)
+const MAX_POINTS = 1000000;
+let points = new Float32Array(MAX_POINTS * 2);
+let count = 0;
+let lastTime = performance.now();
+let zoom = 1.0;
+const zoomRate = 0.0002;
+// Zoom center at bottom-right corner (normalized)
+const targetNormX = 1.0;
+const targetNormY = 0.0;
+const zoomCenter = [targetNormX, 1 - targetNormY];
+gl.uniform2fv(zoomCenterLoc, zoomCenter);
+// Function to check if point is in triangle
+function isInTriangle(px, py, v1x, v1y, v2x, v2y, v3x, v3y) {
+  const d1 = (px - v2x) * (v1y - v2y) - (v1x - v2x) * (py - v2y);
+  const d2 = (px - v3x) * (v2y - v3y) - (v2x - v3x) * (py - v3y);
+  const d3 = (px - v1x) * (v3y - v1y) - (v3x - v1x) * (py - v1y);
+  const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+  const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+  return !(hasNeg && hasPos);
+}
+// Pre-generate initial fractal
+for (let i = 0; i < MAX_POINTS; i++) {
+  const idx = Math.floor(Math.random() * 3) * 2;
+  const tx = attractors[idx];
+  const ty = attractors[idx + 1];
+  current.x = (current.x + tx) * 0.5;
+  current.y = (current.y + ty) * 0.5;
+  const normX = (current.x - minX) / rangeX;
+  const normY = (current.y - minY) / rangeY;
+  points[i * 2] = normX;
+  points[i * 2 + 1] = 1 - normY;
+}
+count = MAX_POINTS;
+gl.bufferData(gl.ARRAY_BUFFER, points, gl.DYNAMIC_DRAW);
+// Animation loop
+function animate(time) {
+  const delta = time - lastTime;
+  lastTime = time;
+  // Update zoom
+  zoom *= 1 + (zoomRate * delta);
+  gl.uniform1f(zoomLoc, zoom);
+  // Dive into lower right sub-triangle if zoom threshold reached
+  if (zoom >= 2.0) {
+    zoom /= 2.0;
+    const v1x = attractors[0], v1y = attractors[1]; // top
+    const v2x = attractors[2], v2y = attractors[3]; // bl
+    const tx = attractors[4], ty = attractors[5]; // br
+    const mid13x = (v1x + tx) * 0.5, mid13y = (v1y + ty) * 0.5;
+    const mid23x = (v2x + tx) * 0.5, mid23y = (v2y + ty) * 0.5;
+    // Transform current
+    current.x = current.x * 2 - tx;
+    current.y = current.y * 2 - ty;
+    // Filter and transform points
+    const new_points = new Float32Array(MAX_POINTS * 2);
+    let new_count = 0;
+    for (let i = 0; i < count * 2; i += 2) {
+      const normX = points[i];
+      const flipY = points[i + 1];
+      const x = normX * rangeX + minX;
+      const y = (1 - flipY) * rangeY + minY;
+      if (isInTriangle(x, y, tx, ty, mid13x, mid13y, mid23x, mid23y)) {
+        const x_prime = x * 2 - tx;
+        const y_prime = y * 2 - ty;
+        const new_normX = (x_prime - minX) / rangeX;
+        const new_normY = (y_prime - minY) / rangeY;
+        new_points[new_count * 2] = new_normX;
+        new_points[new_count * 2 + 1] = 1 - new_normY;
+        new_count++;
+      }
+    }
+    points = new_points;
+    count = new_count;
+  }
+  // Generate new points if there's room
+  const batchSize = Math.min(40000, MAX_POINTS - count);
+  for (let i = 0; i < batchSize; i++) {
+    const idx = Math.floor(Math.random() * 3) * 2;
+    const tx = attractors[idx];
+    const ty = attractors[idx + 1];
+    current.x = (current.x + tx) * 0.5;
+    current.y = (current.y + ty) * 0.5;
+    const normX = (current.x - minX) / rangeX;
+    const normY = (current.y - minY) / rangeY;
+    points[count * 2] = normX;
+    points[count * 2 + 1] = 1 - normY;
+    count++;
+  }
+  // Upload the buffer
+  gl.bufferData(gl.ARRAY_BUFFER, points.subarray(0, count * 2), gl.DYNAMIC_DRAW);
+  // Clear & draw
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.POINTS, 0, count);
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

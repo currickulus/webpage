@@ -1,0 +1,106 @@
+<!-- terminal.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/4.19.0/xterm.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/4.19.0/xterm.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+            flex-direction: column;
+        }
+        #terminal-container {
+            width: 90vw;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: #0f0;
+            border: 1px solid #333;
+            box-sizing: border-box;
+        }
+        .close-button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+            margin-bottom: 10px;
+        }
+        .close-button:hover {
+            background: #cc0000;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal-container">
+        <button id="close-terminal-button" class="close-button">Back to Index</button>
+        <div id="terminal"></div>
+    </div>
+
+    <script>
+        let term;
+        let ws;
+
+        function initializeTerminal() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Authentication required.');
+                window.location.href = 'auth.html';
+                return;
+            }
+
+            term = new Terminal();
+            term.open(document.getElementById('terminal'));
+
+            // Connect WebSocket (assuming backend endpoint like wss://yourserver/terminal with token)
+            ws = new WebSocket(`wss://yourserver/terminal?token=${token}`); // Adjust URL as needed
+
+            ws.onopen = () => {
+                term.write('Connected to terminal...\r\n');
+            };
+
+            ws.onmessage = (event) => {
+                term.write(event.data);
+            };
+
+            ws.onclose = () => {
+                term.write('\r\nConnection closed.');
+            };
+
+            term.onData((data) => {
+                ws.send(data);
+            });
+        }
+
+        // Close button
+        document.getElementById('close-terminal-button').addEventListener('click', () => {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            window.location.href = 'index.html';
+        });
+
+        // Initialize on load
+        initializeTerminal();
+    </script>
+</body>
+</html>

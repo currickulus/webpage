@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Currickulus - Index</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+        }
+        #image-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #background-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center;
+            display: block;
+        }
+        #grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            display: grid;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+        }
+        .grid-cell {
+            border: 1px solid rgba(255, 255, 255, 0);
+            background-color: rgba(0, 255, 0, 0);
+            cursor: pointer;
+            pointer-events: auto;
+            transition: background-color 0.3s;
+        }
+        .grid-cell:hover {
+            background-color: rgba(0, 255, 0, 0.4);
+        }
+        #image-error {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 15px;
+            z-index: 100;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="image-container">
+        <img id="background-image" src="fixed.png" alt="Background Image">
+        <div id="grid-overlay"></div>
+        <div id="image-error">Failed to load image. Using fallback dimensions.</div>
+    </div>
+
+    <script>
+        const gridRows = 7;
+        const gridCols = 9;
+
+        const img = document.getElementById('background-image');
+        const gridOverlay = document.getElementById('grid-overlay');
+        const imageError = document.getElementById('image-error');
+
+        function setupGrid() {
+            gridOverlay.innerHTML = '';
+
+            const imgRect = img.getBoundingClientRect();
+            let displayedWidth = imgRect.width;
+            let displayedHeight = imgRect.height;
+            let useFallback = false;
+
+            if (displayedWidth === 0 || displayedHeight === 0 || !img.complete || img.naturalWidth === 0) {
+                console.warn('Image dimensions invalid or image not loaded. Using viewport dimensions as fallback.');
+                displayedWidth = window.innerWidth;
+                displayedHeight = window.innerHeight;
+                useFallback = true;
+                imageError.style.display = 'block';
+            } else {
+                imageError.style.display = 'none';
+            }
+
+            gridOverlay.style.width = `${displayedWidth}px`;
+            gridOverlay.style.height = `${displayedHeight}px`;
+            gridOverlay.style.left = `${imgRect.left || 0}px`;
+            gridOverlay.style.top = `${imgRect.top || 0}px`;
+            gridOverlay.style.gridTemplateColumns = `repeat(${gridCols}, 1fr)`;
+            gridOverlay.style.gridTemplateRows = `repeat(${gridRows}, 1fr)`;
+
+            for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < gridCols; col++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('grid-cell');
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+
+                    cell.addEventListener('click', () => handleGridAction(row, col));
+                    cell.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        handleGridAction(row, col);
+                    });
+
+                    gridOverlay.appendChild(cell);
+                }
+            }
+
+            console.log(`Grid re-setup: ${gridCols}x${gridRows}, Rendered dimensions: ${displayedWidth}x${displayedHeight}, Fallback used: ${useFallback}`);
+        }
+
+        function handleGridAction(row, col) {
+            console.log(`Grid cell clicked: Row ${row + 1}, Column ${col + 1}`);
+
+            if (row === 3 && col === 4) {
+                window.location.href = 'auth.html';
+            } else if (row === 5 && col === 3) {
+                window.location.href = 'polyfit.html';
+            } else if (row === 0 && col === 4) {
+                window.location.href = 'sierpinski.html';
+	    } else if (row === 1 && col === 4) {
+		window.location.href = 'spinning_cube.html';
+            } else if (row === 5 && col === 5) {
+                window.location.href = 'unit-circle.html';
+            } else if (row === 5 && col === 6) {
+                window.location.href = 'mortar_simulator.html';
+            } else if (row === 2 && col === 4) {
+                if (localStorage.getItem('token')) {
+                    window.location.href = 'terminal.html';
+                } else {
+                    alert('Please log in to access the terminal.');
+                    window.location.href = 'auth.html';
+                }
+            } else if (row === 4 && col === 4) {
+                if (localStorage.getItem('token')) {
+                    window.location.href = 'file-browser.html';
+                } else {
+                    alert('Please log in to access the file browser.');
+                    window.location.href = 'auth.html';
+                }
+            }
+        }
+
+        function initializePageOnLoad() {
+            if (img.complete && img.naturalWidth && img.naturalHeight) {
+                console.log('Image already loaded on page load, setting up grid.');
+                setupGrid();
+            } else {
+                console.log('Waiting for image to load, then setting up grid.');
+                img.onload = () => {
+                    console.log('Image loaded, setting up grid.');
+                    setupGrid();
+                };
+                img.onerror = () => {
+                    console.error('Failed to load image: fixed.png. Setting up grid with fallback dimensions.');
+                    setupGrid();
+                };
+            }
+        }
+
+        initializePageOnLoad();
+        window.addEventListener('resize', setupGrid);
+    </script>
+</body>
+</html>

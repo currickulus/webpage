@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polynomial Fit</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            background: #f8f9fa;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 95%;
+            max-width: 1400px;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.15);
+        }
+        h1 {
+            text-align: center;
+            margin: 0 0 25px;
+            color: #222;
+        }
+        #polyfit-sketch {
+            width: 100%;
+            height: 70vh;
+            min-height: 500px;
+            margin: 20px 0;
+            border: 2px solid #555;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fff;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            align-items: center;
+            margin: 25px 0;
+            font-size: 17px;
+        }
+        .controls label, .controls p, .controls button {
+            margin: 0 10px;
+        }
+        .controls select, .controls button {
+            padding: 12px 22px;
+            font-size: 17px;
+            border-radius: 6px;
+            border: 1px solid #aaa;
+            cursor: pointer;
+        }
+        #fit-button {
+            background: #007bff;
+            color: white;
+            border: none;
+        }
+        #fit-button:hover { background: #0056b3; }
+        #clear-button {
+            background: #6c757d;
+            color: white;
+            border: none;
+        }
+        #clear-button:hover { background: #5a6268; }
+        #plot-equation-button:hover { background: #218838; }
+        #back-button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 14px 35px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 30px auto 0;
+            display: block;
+        }
+        #back-button:hover { background: #c82333; }
+        #status, #equation {
+            text-align: center;
+            font-size: 18px;
+            margin: 12px 0;
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Polynomial Fit</h1>
+        <div id="polyfit-sketch"></div>
+        <div class="controls">
+            <p id="poly-status">Status: Click to add points | Mouse wheel to zoom</p>
+            <p id="poly-equation">Equation: None</p>
+            <label for="degree-select">Degree:</label>
+            <select id="degree-select">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+            </select>
+            <button id="fit-button" onclick="fitPolynomial()">Fit Polynomial</button>
+            <button id="clear-button">Clear Points</button>
+        </div>
+        <div class="controls">
+            <label for="equation-input">Enter Equation (e.g., 2x^2 - 3x + 1):</label>
+            <input type="text" id="equation-input" placeholder="ax^n + bx^(n-1) + ... + c" style="padding: 12px; font-size: 17px; width: 300px; border-radius: 6px; border: 1px solid #aaa;">
+            <button id="plot-equation-button" style="background: #28a745; color: white; border: none; padding: 12px 22px; font-size: 17px; border-radius: 6px; cursor: pointer;">Plot Equation</button>
+        </div>
+        <button id="back-button">Back to Index</button>
+    </div>
+    <script>
+        let polyFitInstance = null;
+        let polyPoints = [];
+        let polyFitCurve = [];
+        
+        function activateFeaturePolyfit() {
+            if (polyFitInstance) return;
+            
+            polyFitInstance = new p5(function(p) {
+                let polySketchWidth, polySketchHeight;
+                let polyScaleFactor = 30;
+                let minScale = 5;
+                let maxScale = 200;
+                
+                p.setup = function() {
+                    polySketchWidth = document.getElementById('polyfit-sketch').clientWidth;
+                    polySketchHeight = polySketchWidth * 0.75;
+                    let canvas = p.createCanvas(polySketchWidth, polySketchHeight);
+                    canvas.parent('polyfit-sketch');
+                    canvas.elt.style.touchAction = 'none';
+                    p.textAlign(p.CENTER, p.CENTER);
+                };
+                
+                p.draw = function() {
+                    p.background(255);
+                    p.translate(polySketchWidth / 2, polySketchHeight / 2);
+                    p.scale(1, -1);
+                    
+                    // Grid
+                    p.stroke(220);
+                    p.strokeWeight(1);
+                    for (let x = -20; x <= 20; x++) {
+                        p.line(x * polyScaleFactor, -polySketchHeight, x * polyScaleFactor, polySketchHeight);
+                    }
+                    for (let y = -20; y <= 20; y++) {
+                        p.line(-polySketchWidth, y * polyScaleFactor, polySketchWidth, y * polyScaleFactor);
+                    }
+                    
+                    // Axes
+                    p.stroke(0);
+                    p.strokeWeight(2);
+                    p.line(-polySketchWidth / 2, 0, polySketchWidth / 2, 0);
+                    p.line(0, -polySketchHeight / 2, 0, polySketchHeight / 2);
+                    
+                    // Points
+                    p.fill(255, 100, 100);
+                    p.noStroke();
+                    polyPoints.forEach(pt => {
+                        p.ellipse(pt.x * polyScaleFactor, pt.y * polyScaleFactor, 10, 10);
+                    });
+                    
+                    // Curve
+                    if (polyFitCurve.length > 0) {
+                        p.stroke(0, 0, 255);
+                        p.strokeWeight(3);
+                        p.noFill();
+                        p.beginShape();
+                        polyFitCurve.forEach(pt => {
+                            p.vertex(pt.x * polyScaleFactor, pt.y * polyScaleFactor);
+                        });
+                        p.endShape();
+                    }
+                };
+                
+                p.mousePressed = function() {
+                    if (p.mouseX >= 0 && p.mouseX <= polySketchWidth && p.mouseY >= 0 && p.mouseY <= polySketchHeight) {
+                        addPoint(p.mouseX, p.mouseY);
+                    }
+                };
+                
+                p.touchStarted = function() {
+                    if (p.touches.length > 0) {
+                        let touch = p.touches[0];
+                        if (touch.x >= 0 && touch.x <= polySketchWidth && touch.y >= 0 && touch.y <= polySketchHeight) {
+                            addPoint(touch.x, touch.y);
+                            return false;
+                        }
+                    }
+                };
+                
+                p.mouseWheel = function(event) {
+                    // Prevent page scrolling
+                    if (p.mouseX >= 0 && p.mouseX <= polySketchWidth && p.mouseY >= 0 && p.mouseY <= polySketchHeight) {
+                        let zoomFactor = event.delta > 0 ? 0.9 : 1.1;
+                        polyScaleFactor *= zoomFactor;
+                        
+                        // Clamp scale factor
+                        polyScaleFactor = Math.max(minScale, Math.min(maxScale, polyScaleFactor));
+                        
+                        return false; // Prevent default scrolling
+                    }
+                };
+                
+                function addPoint(x, y) {
+                    let px = (x - polySketchWidth / 2) / polyScaleFactor;
+                    let py = -(y - polySketchHeight / 2) / polyScaleFactor;
+                    polyPoints.push({ x: px, y: py });
+                    document.getElementById('poly-status').textContent = 
+                        `Status: Added point (${px.toFixed(2)}, ${py.toFixed(2)}) | Total: ${polyPoints.length}`;
+                }
+            }, 'polyfit-sketch');
+        }
+        
+        function formatLatexEquation(coeffs) {
+            let terms = [];
+            for (let i = 0; i < coeffs.length; i++) {
+                let coeff = coeffs[i];
+                let power = coeffs.length - 1 - i;
+                
+                if (Math.abs(coeff) < 0.001 && power !== 0) continue;
+                
+                let termStr = Math.abs(coeff).toFixed(3);
+                
+                if (power === 1) termStr += 'x';
+                else if (power > 1) termStr += `x^{${power}}`;
+                
+                if (i === 0) {
+                    if (coeff < 0) termStr = '-' + termStr;
+                } else {
+                    termStr = (coeff >= 0 ? ' + ' : ' - ') + termStr.replace(/^-/, '');
+                }
+                
+                terms.push(termStr);
+            }
+            return terms.length ? terms.join('') : '0';
+        }
+        
+        function updatePolyCurve(coeffs) {
+            polyFitCurve = [];
+            let xs = polyPoints.map(p => p.x);
+            let xMin = xs.length > 0 ? Math.min(...xs) - 2 : -11;
+            let xMax = xs.length > 0 ? Math.max(...xs) + 2 : 11;
+            
+            for (let x = xMin; x <= xMax; x += 0.05) {
+                polyFitCurve.push({
+                    x: x,
+                    y: evaluatePolynomial(x, coeffs)
+                });
+            }
+        }
+        
+        function polyFit(xs, ys, degree) {
+            let n = xs.length;
+            let X = [];
+            
+            for (let i = 0; i < n; i++) {
+                let row = [];
+                for (let j = 0; j <= degree; j++) {
+                    row.push(Math.pow(xs[i], j));
+                }
+                X.push(row);
+            }
+            
+            let Y = ys.map(y => [y]);
+            let Xt = transpose(X);
+            let XtX = matrixMultiply(Xt, X);
+            let XtY = matrixMultiply(Xt, Y);
+            let coeffs = solveSystem(XtX, XtY);
+            
+            return coeffs.map(c => c[0]).reverse();
+        }
+        
+        function transpose(matrix) {
+            if (matrix.length === 0 || matrix[0].length === 0) return [[]];
+            return matrix[0].map((_, colIndex) => matrix.map(row => row[colIndex]));
+        }
+        
+        function matrixMultiply(A, B) {
+            if (A[0].length !== B.length) throw new Error("Matrix dimensions mismatch");
+            let result = Array(A.length).fill(0).map(() => Array(B[0].length).fill(0));
+            
+            for (let i = 0; i < A.length; i++) {
+                for (let j = 0; j < B[0].length; j++) {
+                    for (let k = 0; k < A[0].length; k++) {
+                        result[i][j] += A[i][k] * B[k][j];
+                    }
+                }
+            }
+            return result;
+        }
+        
+        function solveSystem(A, B) {
+            let n = A.length;
+            let augmented = A.map((row, i) => [...row, ...B[i]]);
+            
+            for (let i = 0; i < n; i++) {
+                let maxRow = i;
+                for (let k = i + 1; k < n; k++) {
+                    if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+                        maxRow = k;
+                    }
+                }
+                [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+                
+                let pivot = augmented[i][i];
+                if (Math.abs(pivot) < 1e-10) throw new Error("Singular matrix");
+                
+                for (let j = i; j <= n; j++) augmented[i][j] /= pivot;
+                
+                for (let k = 0; k < n; k++) {
+                    if (k !== i) {
+                        let factor = augmented[k][i];
+                        for (let j = i; j <= n; j++) augmented[k][j] -= factor * augmented[i][j];
+                    }
+                }
+            }
+            
+            return augmented.map(row => [row[n]]);
+        }
+        
+        function evaluatePolynomial(x, coeffs) {
+            let y = 0;
+            for (let i = 0; i < coeffs.length; i++) {
+                y += coeffs[i] * Math.pow(x, coeffs.length - 1 - i);
+            }
+            return y;
+        }
+        
+        function parseEquation(equation) {
+            // Remove all spaces
+            equation = equation.replace(/\s+/g, '');
+            
+            // Replace ** with ^ for consistency
+            equation = equation.replace(/\*\*/g, '^');
+            
+            // Handle implicit multiplication (e.g., 2x -> 2*x)
+            equation = equation.replace(/(\d)([x])/gi, '$1*$2');
+            
+            // Find all terms (handle both + and - as separators)
+            let terms = [];
+            let currentTerm = '';
+            
+            for (let i = 0; i < equation.length; i++) {
+                if ((equation[i] === '+' || equation[i] === '-') && i > 0) {
+                    terms.push(currentTerm);
+                    currentTerm = equation[i] === '-' ? '-' : '';
+                } else {
+                    currentTerm += equation[i];
+                }
+            }
+            if (currentTerm) terms.push(currentTerm);
+            
+            // Parse each term to find coefficient and power
+            let termPowers = {};
+            
+            for (let term of terms) {
+                term = term.trim();
+                if (!term) continue;
+                
+                let coeff = 1;
+                let power = 0;
+                
+                if (term.includes('x')) {
+                    // Extract coefficient
+                    let coeffMatch = term.match(/^([+-]?\d*\.?\d*)\*?x/i);
+                    if (coeffMatch) {
+                        let coeffStr = coeffMatch[1];
+                        if (coeffStr === '' || coeffStr === '+') coeff = 1;
+                        else if (coeffStr === '-') coeff = -1;
+                        else coeff = parseFloat(coeffStr);
+                    }
+                    
+                    // Extract power
+                    let powerMatch = term.match(/x\^?(\d+)?/i);
+                    if (powerMatch) {
+                        power = powerMatch[1] ? parseInt(powerMatch[1]) : 1;
+                    } else {
+                        power = 1;
+                    }
+                } else {
+                    // Constant term
+                    coeff = parseFloat(term);
+                    power = 0;
+                }
+                
+                // Add to termPowers (accumulate if same power)
+                if (termPowers[power]) {
+                    termPowers[power] += coeff;
+                } else {
+                    termPowers[power] = coeff;
+                }
+            }
+            
+            // Convert to coefficient array (highest power first)
+            let maxPower = Math.max(...Object.keys(termPowers).map(Number));
+            let coeffs = [];
+            
+            for (let i = maxPower; i >= 0; i--) {
+                coeffs.push(termPowers[i] || 0);
+            }
+            
+            return coeffs;
+        }
+        
+        function plotEquation() {
+            let equation = document.getElementById('equation-input').value.trim();
+            
+            if (!equation) {
+                document.getElementById('poly-status').textContent = "Status: Please enter an equation";
+                return;
+            }
+            
+            try {
+                let coeffs = parseEquation(equation);
+                
+                if (coeffs.length === 0 || coeffs.every(c => c === 0)) {
+                    throw new Error("Invalid equation");
+                }
+                
+                // Update the curve
+                updatePolyCurve(coeffs);
+                
+                // Update display
+                document.getElementById('poly-equation').innerHTML = `\\(y = ${formatLatexEquation(coeffs)}\\)`;
+                document.getElementById('poly-status').textContent = `Plotted equation: ${equation}`;
+                
+                if (window.MathJax) {
+                    MathJax.typesetPromise();
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('poly-status').textContent = "Status: Error parsing equation. Use format like: 2x^2 - 3x + 1";
+            }
+        }
+        
+        function fitPolynomial() {
+            if (polyPoints.length < 2) {
+                document.getElementById('poly-status').textContent = "Status: Need at least 2 points";
+                return;
+            }
+            
+            let degree = parseInt(document.getElementById('degree-select').value);
+            
+            if (degree >= polyPoints.length) {
+                degree = polyPoints.length - 1;
+                document.getElementById('poly-status').textContent = `Degree adjusted to ${degree}`;
+            }
+            
+            let xs = polyPoints.map(p => p.x);
+            let ys = polyPoints.map(p => p.y);
+            
+            try {
+                let coeffs = polyFit(xs, ys, degree);
+                document.getElementById('poly-equation').innerHTML = `\\(y = ${formatLatexEquation(coeffs)}\\)`;
+                updatePolyCurve(coeffs);
+                document.getElementById('poly-status').textContent = `Fitted degree ${degree} polynomial`;
+                
+                if (window.MathJax) {
+                    MathJax.typesetPromise();
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('poly-status').textContent = "Error fitting polynomial";
+                document.getElementById('poly-equation').innerHTML = "None";
+            }
+        }
+        
+        document.getElementById('clear-button').addEventListener('click', () => {
+            polyPoints = [];
+            polyFitCurve = [];
+            document.getElementById('poly-status').textContent = "Status: Click to add points | Mouse wheel to zoom";
+            document.getElementById('poly-equation').innerHTML = "Equation: None";
+        });
+        
+        document.getElementById('plot-equation-button').addEventListener('click', plotEquation);
+        
+        document.getElementById('equation-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                plotEquation();
+            }
+        });
+        
+        document.getElementById('back-button').addEventListener('click', () => {
+            if (polyFitInstance) {
+                polyFitInstance.remove();
+                polyFitInstance = null;
+            }
+            window.location.href = 'index.html';
+        });
+        
+        // Start p5
+        activateFeaturePolyfit();
+    </script>
+</body>
+</html>

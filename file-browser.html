@@ -1,0 +1,110 @@
+<!-- file-browser.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Browser</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f8f9fa;
+            flex-direction: column;
+        }
+        #file-browser-container {
+            width: 90vw;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #file-browser {
+            width: 100%;
+            height: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #333;
+            overflow: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        #file-browser ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        #file-browser li {
+            padding: 5px 0;
+            border-bottom: 1px dotted #eee;
+        }
+        #file-browser li:last-child {
+            border-bottom: none;
+        }
+        .close-button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+            margin-bottom: 10px;
+        }
+        .close-button:hover {
+            background: #cc0000;
+        }
+    </style>
+</head>
+<body>
+    <div id="file-browser-container">
+        <button id="close-file-browser-button" class="close-button">Back to Index</button>
+        <div id="file-browser"></div>
+    </div>
+
+    <script>
+        function loadFileBrowser() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Authentication required.');
+                window.location.href = 'auth.html';
+                return;
+            }
+
+            // Fetch file list (assuming backend endpoint like /files with token in header)
+            fetch('/files', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(response => response.json())
+            .then(data => {
+                const ul = document.createElement('ul');
+                data.files.forEach(file => {
+                    const li = document.createElement('li');
+                    li.textContent = file;
+                    ul.appendChild(li);
+                });
+                document.getElementById('file-browser').appendChild(ul);
+            })
+            .catch(error => {
+                document.getElementById('file-browser').textContent = 'Error loading files: ' + error;
+            });
+        }
+
+        // Close button
+        document.getElementById('close-file-browser-button').addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+
+        // Load on page load
+        loadFileBrowser();
+    </script>
+</body>
+</html>

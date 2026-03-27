@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Spinning Cube – Translucent Panels</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+
+    <script>
+        const canvas = document.getElementById('c');
+        if (!canvas) {
+            console.error("Canvas element not found!");
+            document.body.innerHTML = '<h1 style="color:white;text-align:center;padding-top:20vh;">Canvas not found</h1>';
+            throw new Error('Canvas missing');
+        }
+
+        const gl = canvas.getContext('webgl');
+        if (!gl) {
+            document.body.innerHTML = '<h1 style="color:white;text-align:center;padding-top:20vh;">WebGL not supported</h1>';
+            throw new Error('No WebGL');
+        }
+
+        // Shaders
+        const vs = `
+            attribute vec3 pos;
+            attribute vec4 col;
+            uniform mat4 mv;
+            uniform mat4 proj;
+            varying lowp vec4 vcol;
+            void main() {
+                gl_Position = proj * mv * vec4(pos, 1.0);
+                vcol = col;
+            }`;
+
+        const fs = `varying lowp vec4 vcol; void main() { gl_FragColor = vcol; }`;
+
+        function createShader(type, src) {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, src);
+            gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(s));
+                return null;
+            }
+            return s;
+        }
+
+        const prog = gl.createProgram();
+        gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vs));
+        gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fs));
+        gl.linkProgram(prog);
+
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+            console.error('Program link error:', gl.getProgramInfoLog(prog));
+        }
+
+        gl.useProgram(prog);
+
+        const loc = {
+            pos: gl.getAttribLocation(prog, 'pos'),
+            col: gl.getAttribLocation(prog, 'col'),
+            mv: gl.getUniformLocation(prog, 'mv'),
+            proj: gl.getUniformLocation(prog, 'proj')
+        };
+
+        console.log('Attribute locations:', { pos: loc.pos, col: loc.col });
+
+        // Cube geometry
+        const vertices = new Float32Array([
+            -1,-1,1, 1,-1,1, 1,1,1, -1,1,1,
+            -1,-1,-1, -1,1,-1, 1,1,-1, 1,-1,-1,
+            -1,1,-1, -1,1,1, 1,1,1, 1,1,-1,
+            -1,-1,-1, 1,-1,-1, 1,-1,1, -1,-1,1,
+            1,-1,-1, 1,1,-1, 1,1,1, 1,-1,1,
+            -1,-1,-1, -1,-1,1, -1,1,1, -1,1,-1
+        ]);
+
+        // Translucent colors (alpha = 0.5) – red is first group
+        const colors = new Float32Array([
+            1,0,0,0.5, 1,0,0,0.5, 1,0,0,0.5, 1,0,0,0.5, // red – now translucent
+            0,1,0,0.5, 0,1,0,0.5, 0,1,0,0.5, 0,1,0,0.5,
+            0,0,1,0.5, 0,0,1,0.5, 0,0,1,0.5, 0,0,1,0.5,
+            1,1,0,0.5, 1,1,0,0.5, 1,1,0,0.5, 1,1,0,0.5,
+            1,0,1,0.5, 1,0,1,0.5, 1,0,1,0.5, 1,0,1,0.5,
+            0,1,1,0.5, 0,1,1,0.5, 0,1,1,0.5, 0,1,1,0.5
+        ]);
+
+        const indices = new Uint16Array([
+            0,1,2,0,2,3, 4,5,6,4,6,7,
+            8,9,10,8,10,11, 12,13,14,12,14,15,
+            16,17,18,16,18,19, 20,21,22,20,22,23
+        ]);
+
+        const posBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        const colBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+
+        const idxBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+        // Matrix functions
+        function identity() {
+            return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+        }
+        function mul(a, b) {
+            let c = new Float32Array(16);
+            for (let i = 0; i < 4; i++)
+                for (let j = 0; j < 4; j++)
+                    for (let k = 0; k < 4; k++)
+                        c[i*4+j] += a[i*4+k] * b[k*4+j];
+            return c;
+        }
+        function translate(m, x,y,z) {
+            let t = identity();
+            t.set(m);
+            t[12] += x; t[13] += y; t[14] += z;
+            return t;
+        }
+        function rotateX(m, a) {
+            let c = Math.cos(a), s = Math.sin(a);
+            return mul(m, new Float32Array([1,0,0,0, 0,c,-s,0, 0,s,c,0, 0,0,0,1]));
+        }
+        function rotateY(m, a) {
+            let c = Math.cos(a), s = Math.sin(a);
+            return mul(m, new Float32Array([c,0,s,0, 0,1,0,0, -s,0,c,0, 0,0,0,1]));
+        }
+        function rotateZ(m, a) {
+            let c = Math.cos(a), s = Math.sin(a);
+            return mul(m, new Float32Array([c,-s,0,0, s,c,0,0, 0,0,1,0, 0,0,0,1]));
+        }
+        function perspective(fov, aspect, near, far) {
+            let f = 1 / Math.tan(fov/2);
+            let nf = 1 / (near - far);
+            return new Float32Array([
+                f/aspect, 0, 0, 0,
+                0, f, 0, 0,
+                0, 0, (far+near)*nf, -1,
+                0, 0, (2*far*near)*nf, 0
+            ]);
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvas.clientWidth * dpr;
+            canvas.height = canvas.clientHeight * dpr;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let t = 0;
+        function animate() {
+            t += 0.017;
+
+            gl.clearColor(0.02, 0.02, 0.06, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthMask(false);   // ← KEY FIX: disable depth writes so transparent faces don't block each other
+
+            // Optional: disable culling for maximum see-through effect
+            gl.disable(gl.CULL_FACE);
+
+            const aspect = canvas.width / canvas.height;
+            const proj = perspective(Math.PI / 3, aspect, 0.1, 100);
+
+            let mv = identity();
+            mv = rotateX(mv, t * 0.8);
+            mv = rotateY(mv, t * 1.15);
+            mv = rotateZ(mv, t * 0.45);
+            mv = translate(mv, 0, 0, -6.0);
+
+            gl.uniformMatrix4fv(loc.proj, false, proj);
+            gl.uniformMatrix4fv(loc.mv, false, mv);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+            gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(loc.pos);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
+            gl.vertexAttribPointer(loc.col, 4, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(loc.col);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+            gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+
+            // Restore depth writes after drawing (good practice)
+            gl.depthMask(true);
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

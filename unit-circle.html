@@ -1,0 +1,210 @@
+<!-- unit-circle.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unit Circle</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f8f9fa;
+            flex-direction: column;
+        }
+        #unit-circle-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+            box-sizing: border-box;
+            color: #333;
+        }
+        #unit-circle-sketch {
+            display: block;
+            margin: auto;
+        }
+        #info-display {
+            margin-top: 15px;
+            font-family: Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.5;
+            text-align: left;
+        }
+        .close-button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+            margin-bottom: 20px;
+        }
+        .close-button:hover {
+            background: #cc0000;
+        }
+    </style>
+</head>
+<body>
+    <div id="unit-circle-container">
+        <button id="close-unit-circle-button" class="close-button">Back to Index</button>
+        <div id="unit-circle-sketch"></div>
+        <div id="info-display">
+            <p id="degrees">Degrees: 0°</p>
+            <p id="radians">Radians: 0.00</p>
+            <p id="sine">sin(θ): 0.00</p>
+            <p id="cosine">cos(θ): 1.00</p>
+            <p id="tangent">tan(θ): 0.00</p>
+            <p id="cartesian">Cartesian: (150.00, 0.00)</p>
+            <p id="polar">Polar: (1, 0°)</p>
+        </div>
+    </div>
+
+    <script>
+        let unitCircleInstance = null;
+
+        function activateFeatureUnitCircle() {
+            if (unitCircleInstance) return;
+
+            unitCircleInstance = new p5((sketch) => {
+                let angle = 0;
+                const radius = 150;
+
+                sketch.setup = () => {
+                    sketch.createCanvas(400, 400);
+                    sketch.angleMode(sketch.DEGREES);
+                };
+
+                sketch.draw = () => {
+                    sketch.background(255);
+                    sketch.translate(sketch.width / 2, sketch.height / 2);
+                    
+                    // Draw axes
+                    sketch.stroke(200);
+                    sketch.strokeWeight(1);
+                    sketch.line(-radius - 20, 0, radius + 20, 0);
+                    sketch.line(0, -radius - 20, 0, radius + 20);
+                    
+                    // Draw circle
+                    sketch.stroke(0);
+                    sketch.strokeWeight(2);
+                    sketch.noFill();
+                    sketch.ellipse(0, 0, radius * 2);
+
+                    // Calculate position on circle
+                    let x = radius * sketch.cos(angle);
+                    let y = -radius * sketch.sin(angle); // Negative for standard mathematical convention
+
+                    // Draw radius line
+                    sketch.stroke(0, 100, 255);
+                    sketch.strokeWeight(2);
+                    sketch.line(0, 0, x, y);
+
+                    // Draw point on circle
+                    sketch.fill(255, 0, 0);
+                    sketch.noStroke();
+                    sketch.ellipse(x, y, 10, 10);
+
+                    // Draw tangent line (perpendicular to radius at the point)
+                    sketch.stroke(0, 200, 0);
+                    sketch.strokeWeight(2);
+                    
+                    // Tangent line is perpendicular to radius
+                    // If radius is at angle θ, tangent is at angle θ + 90°
+                    let tangentAngle = angle + 90;
+                    let tangentLength = 60; // Fixed length for visualization
+                    
+                    // Calculate endpoints of tangent line (centered at point on circle)
+                    let tx1 = x + tangentLength * sketch.cos(tangentAngle);
+                    let ty1 = y - tangentLength * sketch.sin(tangentAngle);
+                    let tx2 = x - tangentLength * sketch.cos(tangentAngle);
+                    let ty2 = y + tangentLength * sketch.sin(tangentAngle);
+                    
+                    sketch.line(tx1, ty1, tx2, ty2);
+                    
+                    // Draw small endpoints on tangent line
+                    sketch.fill(0, 200, 0);
+                    sketch.noStroke();
+                    sketch.ellipse(tx1, ty1, 6, 6);
+                    sketch.ellipse(tx2, ty2, 6, 6);
+
+                    // Draw projection lines (dotted)
+                    sketch.stroke(150);
+                    sketch.strokeWeight(1);
+                    sketch.drawingContext.setLineDash([5, 5]);
+                    sketch.line(x, y, x, 0); // vertical to x-axis
+                    sketch.line(x, y, 0, y); // horizontal to y-axis
+                    sketch.drawingContext.setLineDash([]);
+
+                    // Update info display
+                    updateUnitCircleInfo(angle, x, y);
+                };
+
+                sketch.mouseDragged = () => {
+                    if (sketch.mouseX >= 0 && sketch.mouseX <= sketch.width &&
+                        sketch.mouseY >= 0 && sketch.mouseY <= sketch.height) {
+                        let dx = sketch.mouseX - sketch.width / 2;
+                        let dy = sketch.mouseY - sketch.height / 2;
+                        angle = sketch.atan2(-dy, dx); // Negative dy for standard math convention
+                        if (angle < 0) angle += 360; // Normalize to 0-360
+                    }
+                };
+
+                sketch.mousePressed = () => {
+                    sketch.mouseDragged();
+                };
+            }, 'unit-circle-sketch');
+        }
+
+        function updateUnitCircleInfo(angleDeg, x, y) {
+            const angleRad = angleDeg * Math.PI / 180;
+            const sinValue = Math.sin(angleRad);
+            const cosValue = Math.cos(angleRad);
+            const tanValue = Math.tan(angleRad);
+            
+            document.getElementById('degrees').textContent = `Degrees: ${angleDeg.toFixed(2)}°`;
+            document.getElementById('radians').textContent = `Radians: ${angleRad.toFixed(2)}`;
+            document.getElementById('sine').textContent = `sin(θ): ${sinValue.toFixed(2)}`;
+            document.getElementById('cosine').textContent = `cos(θ): ${cosValue.toFixed(2)}`;
+            
+            // Handle undefined tangent at 90° and 270°
+            if (Math.abs(cosValue) < 0.01) {
+                document.getElementById('tangent').textContent = `tan(θ): undefined`;
+            } else {
+                document.getElementById('tangent').textContent = `tan(θ): ${tanValue.toFixed(2)}`;
+            }
+            
+            document.getElementById('cartesian').textContent = `Cartesian: (${x.toFixed(2)}, ${y.toFixed(2)})`;
+            document.getElementById('polar').textContent = `Polar: (1, ${angleDeg.toFixed(2)}°)`;
+        }
+
+        // Close button redirects back to index
+        document.getElementById('close-unit-circle-button').addEventListener('click', () => {
+            if (unitCircleInstance) {
+                unitCircleInstance.remove();
+                unitCircleInstance = null;
+            }
+            window.location.href = 'index.html';
+        });
+
+        // Activate on load
+        window.addEventListener('load', () => {
+            activateFeatureUnitCircle();
+        });
+    </script>
+</body>
+</html>

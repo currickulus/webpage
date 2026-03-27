@@ -1,0 +1,119 @@
+<!-- auth.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f8f9fa; /* Light background for full-screen form */
+            font-family: Arial, sans-serif;
+        }
+        #auth-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 400px;
+            width: 100%;
+            box-sizing: border-box;
+            color: #333;
+        }
+        #auth-container h2 {
+            color: #333;
+            margin-top: 0;
+            text-align: center;
+        }
+        #auth-form label {
+            display: block;
+            margin: 10px 0 5px;
+            text-align: left;
+            font-weight: bold;
+        }
+        #auth-form input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        #auth-form button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            transition: background-color 0.2s ease;
+        }
+        #auth-form button:hover {
+            background: #218838;
+        }
+        #auth-error {
+            color: #dc3545;
+            margin-top: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="auth-container">
+        <h2>Login</h2>
+        <form id="auth-form">
+            <label for="mac">MAC Address:</label> <!-- Added missing mac input based on JS reference -->
+            <input type="text" id="mac" required>
+            <label for="username">Username:</label>
+            <input type="text" id="username" required>
+            <label for="password">Password:</label>
+            <input type="password" id="password" required>
+            <button type="submit">Login</button>
+        </form>
+        <p id="auth-error" style="display: none;"></p>
+    </div>
+
+    <script>
+        const authForm = document.getElementById('auth-form');
+        const authError = document.getElementById('auth-error');
+
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const mac = document.getElementById('mac').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/auth/mac', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mac, username, password })
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    authError.textContent = data.error;
+                    authError.style.display = 'block';
+                    return;
+                }
+
+                localStorage.setItem('token', data.token); // Store token for cross-page access
+                alert('Login successful! You can now access authenticated features.');
+                window.location.href = 'index.html'; // Redirect back to index after login
+            } catch (error) {
+                authError.textContent = 'An error occurred during login.';
+                authError.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

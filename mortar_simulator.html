@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mortar Ballistics Simulator</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { margin:0; background:#0f172a; font-family:system-ui,sans-serif; color:#e2e8f0; }
+    #root { padding:20px; max-width:1100px; margin:0 auto; }
+  </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+const MortarSimulator = () => {
+  const canvasRef = React.useRef(null);
+  const [firing, setFiring] = React.useState(false);
+  const [completed, setCompleted] = React.useState(false);
+
+  const [targetDistance, setTargetDistance] = React.useState(500);
+  const [targetHeight, setTargetHeight] = React.useState(0);
+  const [launchAngle, setLaunchAngle] = React.useState(45);
+
+  const g = 32.2;           // ft/s²
+  const muzzleVelocity = 150; // ft/s
+
+  const calculateTrajectory = (angle) => {
+    const angleRad = (angle * Math.PI) / 180;
+    const v0x = muzzleVelocity * Math.cos(angleRad);
+    const v0y = muzzleVelocity * Math.sin(angleRad);
+
+    const t_total = targetDistance / v0x || 0.01;
+    const finalHeight = v0y * t_total - 0.5 * g * t_total * t_total;
+    const maxHeight = (v0y * v0y) / (2 * g);
+
+    let optimalAngle = 45;
+    const disc = Math.pow(muzzleVelocity, 4) - g * (g * Math.pow(targetDistance, 2) + 2 * targetHeight * Math.pow(muzzleVelocity, 2));
+    if (disc >= 0 && targetDistance > 0) {
+      optimalAngle = Math.atan(
+        (Math.pow(muzzleVelocity, 2) + Math.sqrt(disc)) / (g * targetDistance)
+      ) * (180 / Math.PI);
+    }
+
+    return { v0x, v0y, t_total, finalHeight, maxHeight, optimalAngle };
+  };
+
+  const traj = calculateTrajectory(launchAngle);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const maxDist = 700;
+    const maxHt   = 400;
+    const sx = (w - 80) / maxDist;
+    const sy = (h - 80) / maxHt;
+
+    const drawGrid = () => {
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= maxDist; x += 100) {
+        const sxPos = 40 + x * sx;
+        ctx.beginPath(); ctx.moveTo(sxPos, 40); ctx.lineTo(sxPos, h-40); ctx.stroke();
+        ctx.fillStyle = '#64748b'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(x, sxPos, h-20);
+      }
+      for (let y = 0; y <= maxHt; y += 50) {
+        const syPos = h - 40 - y * sy;
+        ctx.beginPath(); ctx.moveTo(40, syPos); ctx.lineTo(w-40, syPos); ctx.stroke();
+        ctx.fillStyle = '#64748b'; ctx.textAlign = 'right';
+        ctx.fillText(y, 30, syPos + 4);
+      }
+      ctx.strokeStyle = '#475569'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(40, h-40); ctx.lineTo(w-40, h-40);
+      ctx.moveTo(40, 40); ctx.lineTo(40, h-40); ctx.stroke();
+    };
+
+    const drawTarget = () => {
+      const tx = 40 + targetDistance * sx;
+      const ty = h - 40 - targetHeight * sy;
+      ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(tx-14, ty); ctx.lineTo(tx+14, ty);
+      ctx.moveTo(tx, ty-14); ctx.lineTo(tx, ty+14); ctx.stroke();
+      ctx.beginPath(); ctx.arc(tx, ty, 10, 0, Math.PI*2); ctx.stroke();
+    };
+
+    const drawTrajectory = (progress = 1) => {
+      ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 3; ctx.beginPath();
+      const steps = 120;
+      for (let i = 0; i <= steps * progress; i++) {
+        const t = (i / steps) * traj.t_total;
+        const x = traj.v0x * t;
+        const y = traj.v0y * t - 0.5 * g * t * t;
+        const px = 40 + x * sx;
+        const py = h - 40 - y * sy;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      if (firing && progress < 1) {
+        const t = progress * traj.t_total;
+        const x = traj.v0x * t;
+        const y = traj.v0y * t - 0.5 * g * t * t;
+        ctx.fillStyle = '#f87171';
+        ctx.beginPath();
+        ctx.arc(40 + x * sx, h - 40 - y * sy, 6, 0, Math.PI*2);
+        ctx.fill();
+      }
+    };
+
+    drawGrid();
+    drawTarget();
+    drawTrajectory(completed ? 1 : 0);
+
+    if (firing) {
+      const start = Date.now();
+      const duration = 2800;
+      const anim = () => {
+        const prog = Math.min((Date.now() - start) / duration, 1);
+        drawGrid(); drawTarget(); drawTrajectory(prog);
+        if (prog < 1) requestAnimationFrame(anim);
+        else { setFiring(false); setCompleted(true); }
+      };
+      anim();
+    }
+  }, [firing, completed, targetDistance, targetHeight, launchAngle]);
+
+  return (
+    <div>
+      <h2 style={{color:'#60a5fa'}}>Mortar Ballistics Simulator</h2>
+      <div style={{background:'#1e293b', padding:'16px', borderRadius:'8px', margin:'16px 0', fontFamily:'monospace'}}>
+        Time of flight: {traj.t_total.toFixed(2)} s<br/>
+        Max height: {traj.maxHeight.toFixed(0)} ft<br/>
+        Impact height: {traj.finalHeight.toFixed(1)} ft<br/>
+        <span style={{color:'#34d399'}}>Best angle: {traj.optimalAngle.toFixed(1)}°</span>
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'16px'}}>
+        <div>
+          <label>Distance: {targetDistance} ft</label><br/>
+          <input type="range" min="100" max="700" step="10" value={targetDistance}
+            onChange={e => {setTargetDistance(+e.target.value); setCompleted(false);}}
+            disabled={firing} style={{width:'100%'}} />
+        </div>
+        <div>
+          <label>Height: {targetHeight} ft</label><br/>
+          <input type="range" min="-80" max="150" value={targetHeight}
+            onChange={e => {setTargetHeight(+e.target.value); setCompleted(false);}}
+            disabled={firing} style={{width:'100%'}} />
+        </div>
+        <div>
+          <label>Angle: {launchAngle}°</label><br/>
+          <input type="range" min="15" max="85" step="1" value={launchAngle}
+            onChange={e => {setLaunchAngle(+e.target.value); setCompleted(false);}}
+            disabled={firing} style={{width:'100%'}} />
+        </div>
+        <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+          <button onClick={() => {setCompleted(false); setFiring(true);}}
+            disabled={firing}
+            style={{background:firing?'#4b5563':'#3b82f6', color:'white', border:'none', padding:'10px 20px', borderRadius:'6px', cursor:firing?'not-allowed':'pointer'}}>
+            {firing ? 'Firing...' : 'Fire!'}
+          </button>
+          <button onClick={() => {setFiring(false); setCompleted(false);}}
+            style={{background:'#6b7280', color:'white', border:'none', padding:'10px 20px', borderRadius:'6px', cursor:'pointer'}}>
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <canvas ref={canvasRef} width="960" height="540"
+        style={{border:'2px solid #334155', borderRadius:'8px', width:'100%', background:'#000', marginTop:'20px', display:'block'}} />
+    </div>
+  );
+};
+
+ReactDOM.render(<MortarSimulator />, document.getElementById('root'));
+</script>
+
+</body>
+</html>
