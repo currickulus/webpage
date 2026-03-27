@@ -32,8 +32,7 @@
         }
         #grid-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
             pointer-events: none;
             display: grid;
             width: 100%;
@@ -65,7 +64,6 @@
             background: #0a0a0a;
             border: 1px solid #00ff00;
             width: 320px;
-            padding: 0;
             box-shadow: 0 0 40px rgba(0,255,0,0.2);
         }
         .calc-header {
@@ -82,12 +80,11 @@
         }
         .calc-close {
             cursor: pointer;
-            color: #ff3333;
-            font-size: 16px;
             background: none;
             border: none;
             color: #ff3333;
             font-family: 'Courier New', monospace;
+            font-size: 16px;
             line-height: 1;
         }
         .calc-display {
@@ -96,19 +93,8 @@
             text-align: right;
             border-bottom: 1px solid #222;
         }
-        .calc-expr {
-            color: #555;
-            font-size: 11px;
-            min-height: 16px;
-            margin-bottom: 4px;
-            word-break: break-all;
-        }
-        .calc-result {
-            color: #00ff00;
-            font-size: 28px;
-            min-height: 36px;
-            word-break: break-all;
-        }
+        .calc-expr { color: #555; font-size: 11px; min-height: 16px; margin-bottom: 4px; word-break: break-all; }
+        .calc-result { color: #00ff00; font-size: 28px; min-height: 36px; word-break: break-all; }
         .calc-buttons {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -133,8 +119,6 @@
         .cb.eq { color: #000; background: #00ff00; }
         .cb.eq:hover { background: #00cc00; }
         .cb.wide { grid-column: span 2; }
-
-        /* RPN stack display */
         #rpn-stack {
             background: #000;
             border-bottom: 1px solid #222;
@@ -143,7 +127,6 @@
             max-height: 80px;
             overflow-y: auto;
             font-size: 11px;
-            color: #555;
         }
         .stack-item { color: #00aa00; padding: 1px 0; text-align: right; }
         .stack-item:last-child { color: #00ff00; }
@@ -193,7 +176,7 @@
     </div>
 </div>
 
-<!-- ── RPN (Postfix) Calculator ── -->
+<!-- ── RPN Calculator ── -->
 <div class="calc-overlay" id="rpn-overlay">
     <div class="calc-box">
         <div class="calc-header">
@@ -233,7 +216,6 @@
 </div>
 
 <script>
-    // ── Grid Setup ──────────────────────────────────────────────────────────
     const gridRows = 7;
     const gridCols = 9;
     const img = document.getElementById('background-image');
@@ -263,53 +245,40 @@
 
     function handleGrid(row, col) {
         const token = localStorage.getItem('token');
-        // row 0 col 0 — RPN calculator (top left)
         if (row === 0 && col === 0) { openCalc('rpn'); return; }
-        // row 0 col 8 — Infix calculator (top right)
         if (row === 0 && col === 8) { openCalc('infix'); return; }
-        // row 0 col 4 — Sierpinski
         if (row === 0 && col === 4) { window.location.href = 'sierpinski.html'; return; }
-        // row 1 col 4 — Spinning cube
         if (row === 1 && col === 4) { window.location.href = 'spinning_cube.html'; return; }
-        // row 2 col 4 — Terminal (auth required)
         if (row === 2 && col === 4) {
             if (token) { window.location.href = 'terminal.html'; }
             else { window.location.href = 'auth.html'; }
             return;
         }
-        // row 3 col 4 — Auth
         if (row === 3 && col === 4) { window.location.href = 'auth.html'; return; }
-        // row 4 col 4 — File browser (auth required)
         if (row === 4 && col === 4) {
             if (token) { window.location.href = 'file-browser.html'; }
             else { window.location.href = 'auth.html'; }
             return;
         }
-        // row 5 col 3 — Polyfit
         if (row === 5 && col === 3) { window.location.href = 'polyfit.html'; return; }
-        // row 5 col 5 — Unit circle
+        if (row === 5 && col === 4) { window.location.href = 'bunnymesh.html'; return; }
         if (row === 5 && col === 5) { window.location.href = 'unit-circle.html'; return; }
-        // row 5 col 6 — Mortar simulator
         if (row === 5 && col === 6) { window.location.href = 'mortar_simulator.html'; return; }
+        if (row === 6 && col === 4) { window.location.href = 'sphere-shader.html'; return; }
+        if (row === 6 && col === 6) { window.location.href = 'teapot-slider.html'; return; }
     }
 
     img.complete ? setupGrid() : img.onload = setupGrid;
     img.onerror = setupGrid;
     window.addEventListener('resize', setupGrid);
 
-    // ── Calc helpers ────────────────────────────────────────────────────────
-    function openCalc(id) {
-        document.getElementById(id + '-overlay').classList.add('open');
-    }
-    function closeCalc(id) {
-        document.getElementById(id + '-overlay').classList.remove('open');
-    }
-    // Close on backdrop click
+    function openCalc(id) { document.getElementById(id + '-overlay').classList.add('open'); }
+    function closeCalc(id) { document.getElementById(id + '-overlay').classList.remove('open'); }
     document.querySelectorAll('.calc-overlay').forEach(el => {
         el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
     });
 
-    // ── Infix Calculator ────────────────────────────────────────────────────
+    // ── Infix ──
     let infixExpr = '';
     function infixInput(ch) {
         infixExpr += ch;
@@ -327,21 +296,13 @@
             document.getElementById('infix-expr').textContent = '';
         } catch { document.getElementById('infix-result').textContent = 'Error'; }
     }
-    function infixClear() {
-        infixExpr = '';
-        document.getElementById('infix-expr').textContent = '';
-        document.getElementById('infix-result').textContent = '0';
-    }
-    function infixDel() {
-        infixExpr = infixExpr.slice(0, -1);
-        document.getElementById('infix-expr').textContent = infixExpr;
-    }
+    function infixClear() { infixExpr = ''; document.getElementById('infix-expr').textContent = ''; document.getElementById('infix-result').textContent = '0'; }
+    function infixDel() { infixExpr = infixExpr.slice(0, -1); document.getElementById('infix-expr').textContent = infixExpr; }
 
-    // ── RPN Calculator ──────────────────────────────────────────────────────
+    // ── RPN ──
     let rpnStack = [];
     let rpnCurrent = '0';
     let rpnFresh = true;
-
     function rpnRender() {
         const stackEl = document.getElementById('rpn-stack');
         stackEl.innerHTML = rpnStack.map(n => '<div class="stack-item">' + n + '</div>').join('');
@@ -354,20 +315,14 @@
         else rpnCurrent += d;
         rpnRender();
     }
-    function rpnEnter() {
-        rpnStack.push(parseFloat(rpnCurrent));
-        rpnFresh = true;
-        rpnRender();
-    }
+    function rpnEnter() { rpnStack.push(parseFloat(rpnCurrent)); rpnFresh = true; rpnRender(); }
     function rpnOp(op) {
         if (op === 'sqrt') {
             if (!rpnFresh) rpnStack.push(parseFloat(rpnCurrent));
             const a = rpnStack.pop();
             if (a === undefined) return;
             rpnCurrent = String(+Math.sqrt(a).toFixed(10));
-            rpnFresh = true;
-            rpnRender();
-            return;
+            rpnFresh = true; rpnRender(); return;
         }
         if (op === 'swap') {
             if (!rpnFresh) rpnStack.push(parseFloat(rpnCurrent));
@@ -375,8 +330,7 @@
             const a = rpnStack.pop(), b = rpnStack.pop();
             rpnStack.push(a); rpnStack.push(b);
             rpnCurrent = String(rpnStack[rpnStack.length - 1]);
-            rpnRender();
-            return;
+            rpnRender(); return;
         }
         if (!rpnFresh) rpnStack.push(parseFloat(rpnCurrent));
         if (rpnStack.length < 2) return;
@@ -387,8 +341,7 @@
         else if (op === '*') r = a * b;
         else if (op === '/') r = b !== 0 ? a / b : 'err';
         rpnCurrent = typeof r === 'number' ? String(+r.toFixed(10)) : r;
-        rpnFresh = true;
-        rpnRender();
+        rpnFresh = true; rpnRender();
     }
     function rpnClear() { rpnStack = []; rpnCurrent = '0'; rpnFresh = true; rpnRender(); }
     function rpnDrop() {
@@ -396,16 +349,8 @@
         else if (rpnStack.length) rpnCurrent = String(rpnStack.pop());
         rpnRender();
     }
-    function rpnDel() {
-        if (rpnFresh) return;
-        rpnCurrent = rpnCurrent.slice(0, -1) || '0';
-        rpnRender();
-    }
-    function rpnNeg() {
-        rpnCurrent = String(-parseFloat(rpnCurrent));
-        rpnRender();
-    }
-
+    function rpnDel() { if (rpnFresh) return; rpnCurrent = rpnCurrent.slice(0, -1) || '0'; rpnRender(); }
+    function rpnNeg() { rpnCurrent = String(-parseFloat(rpnCurrent)); rpnRender(); }
     rpnRender();
 </script>
 </body>
