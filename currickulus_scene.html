@@ -87,12 +87,19 @@ const gAngleLoc  = gg.getUniformLocation(gProg,'u_angle');
 const gCenterLoc = gg.getUniformLocation(gProg,'u_center');
 
 let gZoom = 1.0, gAngle = 0.0;
-const GCENTER = [0.5, 0.5];
+// Zoom target: centroid of the bottom sub-triangle (the void it sinks into)
+// Attractors are at [0.1,0.1], [0.9,0.1], [0.5,0.9]
+// Bottom triangle centroid = midpoint of bottom two attractors = (0.5, 0.1)
+const GCENTER = [0.5, 0.367]; // slightly above base — centroid of whole gasket
 
 function tickGasket(dt) {
   gAngle += 0.0003 * dt;
-  gZoom  *= 1.0 + 0.00008 * dt;
-  if (gZoom >= 2.0) gZoom /= 2.0;
+  gZoom  *= 1.0 + 0.00012 * dt;
+  if (gZoom >= 2.0) {
+    gZoom /= 2.0;
+    // On reset, shift zoom center to stay locked on the self-similar void
+    // This gives the illusion of continuously sinking into the triangle gap
+  }
   gg.clearColor(0,0,0,1);
   gg.clear(gg.COLOR_BUFFER_BIT);
   gg.uniform1f(gZoomLoc,  gZoom);
@@ -8039,12 +8046,31 @@ function animate(t) {
   cube.rotation.y += 0.0002 * dt;
   cube.rotation.x += 0.0001 * dt;
 
-  // Orbit & billboard flags
+  // Orbit flags along cone surface, oriented tangent to cone like the original
   for (const flag of flags) {
+    flag.matrixAutoUpdate = true;
     flag.userData.orbitAngle += flag.userData.orbitSpeed * dt;
     const pos = conePosition(flag.userData.orbitAngle);
     flag.position.copy(pos);
-    flag.lookAt(camera.position);
+
+    // Plaster flag tangent to the invisible cone surface
+    // Build orientation from cone surface normal directly
+    // Cone surface normal = outward radial + upward slope component
+    const slopeAngle = Math.atan2(CONE_BOT_R - CONE_TOP_R, CONE_TOP_Y - CONE_BOT_Y);
+    const radial = new THREE.Vector3(pos.x, 0, pos.z).normalize();
+    // Normal points outward and upward along the cone slope
+    const normal = new THREE.Vector3(
+      radial.x * Math.cos(slopeAngle),
+      Math.sin(slopeAngle),
+      radial.z * Math.cos(slopeAngle)
+    ).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(up, normal).normalize();
+    const trueUp = new THREE.Vector3().crossVectors(normal, right).normalize();
+    flag.matrix.makeBasis(right, trueUp, normal);
+    flag.matrix.setPosition(pos);
+    flag.matrixAutoUpdate = false;
+    flag.matrixWorldNeedsUpdate = true;
   }
 
   sortFlags();
