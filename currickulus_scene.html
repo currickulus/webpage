@@ -15,7 +15,7 @@
 </style>
 </head>
 <body>
-<div id="hud">WASD — MOVE &nbsp;|&nbsp; MOUSE — LOOK &nbsp;|&nbsp; CLICK TO LOCK POINTER</div>
+<div id="hud">WASD — MOVE &nbsp;|&nbsp; MOUSE — LOOK &nbsp;|&nbsp; CLICK TO LOCK &nbsp;‖&nbsp; 1 FINGER — LOOK &nbsp;|&nbsp; PINCH — FORWARD / BACK</div>
 
 <!-- Gasket canvas (offscreen source) -->
 <canvas id="gasket" style="display:none"></canvas>
@@ -218,7 +218,7 @@ function buildTeapot() {
     [0.06,0.62],[0.04,0.64],[0.04,0.72],[0.06,0.76],[0.10,0.78],
     [0.14,0.78],[0.10,0.80],[0.06,0.82],[0.04,0.84],[0.02,0.86],[0,0.88]
   ];
-  for (const [x,y] of profile) pts.push(new THREE.Vector2(x*2, y*2 - 0.5));
+  for (const [x,y] of profile) pts.push(new THREE.Vector2(x*2, y*2));
   const geo = new THREE.LatheGeometry(pts, 32);
   return geo;
 }
@@ -227,7 +227,7 @@ const teapotMat = new THREE.MeshPhongMaterial({
   color: 0xcc8833, shininess: 120, specular: 0xffffff
 });
 const teapot = new THREE.Mesh(buildTeapot(), teapotMat);
-teapot.position.set(-2, 0, 0);
+teapot.position.set(-4.5, 0, -3);
 teapot.castShadow = true;
 scene.add(teapot);
 
@@ -241,7 +241,7 @@ const sphereMat = new THREE.MeshPhongMaterial({
   map: venusTex, shininess: 30, specular: 0x442200
 });
 const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-sphere.position.set(0, 0.8, 0);
+sphere.position.set(3.5, 0.8, -2);
 sphere.castShadow = true;
 scene.add(sphere);
 
@@ -252,7 +252,7 @@ const cubeMat = new THREE.MeshPhongMaterial({
   transparent: true, opacity: 0.85
 });
 const cube = new THREE.Mesh(cubeGeo, cubeMat);
-cube.position.set(2, 0.6, 0);
+cube.position.set(4, 0.6, 3);
 cube.castShadow = true;
 scene.add(cube);
 
@@ -7768,7 +7768,7 @@ const bunnyMat = new THREE.MeshPhongMaterial({
 });
 const bunny = new THREE.Mesh(bunnyGeo, bunnyMat);
 bunny.scale.setScalar(bScale);
-bunny.position.set(-0.5, -(bb.min.y * bScale), -1.5);
+bunny.position.set(-3, -(bb.min.y * bScale), 3);
 bunny.castShadow = true;
 scene.add(bunny);
 
@@ -7859,7 +7859,7 @@ function buildLogoMesh(color) {
     return g;
   }
 
-  const mat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+  const mat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.55 });
 
   for (const geo of [orbGeo, spikeTopGeo, spikeBotGeo, wingLGeo, wingRGeo,
                      talonGeo(0.22,-0.34,false), talonGeo(0.22,-0.34,true),
@@ -7872,38 +7872,47 @@ function buildLogoMesh(color) {
 // ── Flags — billboarded logo quads orbiting overhead ──
 const FLAG_COLORS = [0xff3300, 0x00ccff, 0xffdd00, 0xff00aa, 0x44ff88];
 const flags = [];
-const FLAG_COUNT = 12;
-const FLAG_RADIUS = 7;
-const FLAG_HEIGHT = 5;
+const FLAG_COUNT   = 14;
+const CONE_TOP_R   = 1.8;   // narrow end (top)
+const CONE_BOT_R   = 9.0;   // wide end (base)
+const CONE_TOP_Y   = 8.5;   // height of narrow end
+const CONE_BOT_Y   = 1.2;   // height of wide end
 
 for (let i = 0; i < FLAG_COUNT; i++) {
   const color = FLAG_COLORS[i % FLAG_COLORS.length];
   const logo  = buildLogoMesh(color);
-  const angle = (i / FLAG_COUNT) * Math.PI * 2;
-  logo.position.set(
-    Math.cos(angle) * FLAG_RADIUS,
-    FLAG_HEIGHT + Math.sin(i * 1.3) * 0.8,
-    Math.sin(angle) * FLAG_RADIUS
-  );
-  logo.userData.orbitAngle = angle;
-  logo.userData.orbitSpeed = 0.0003 + Math.random() * 0.0002;
-  logo.userData.bobPhase   = Math.random() * Math.PI * 2;
+  // Distribute evenly along the cone's t parameter (0=top, 1=bottom)
+  const t0 = i / FLAG_COUNT;
+  const angle0 = t0 * Math.PI * 2 * 3; // 3 full wraps around the cone
+  logo.userData.orbitAngle = angle0;
+  logo.userData.orbitSpeed = 0.00018 + (i % 3) * 0.00006;
   scene.add(logo);
   flags.push(logo);
 }
 
-// ── Camera Controller (WASD + mouse look) ────────────
+// Returns position on the cone surface given a continuous angle
+// The cone param t cycles 0→1 mapped from angle mod (2π*wraps)
+function conePosition(angle) {
+  const WRAPS = 3.0;
+  // t goes 0→1 as angle goes through WRAPS full rotations, then resets
+  const t = ((angle % (Math.PI * 2 * WRAPS)) / (Math.PI * 2 * WRAPS) + 1) % 1;
+  const r = CONE_TOP_R + (CONE_BOT_R - CONE_TOP_R) * t;
+  const y = CONE_TOP_Y + (CONE_BOT_Y - CONE_TOP_Y) * t;
+  return new THREE.Vector3(Math.cos(angle) * r, y, Math.sin(angle) * r);
+}
+
+// ── Camera Controller (WASD + mouse look + touch) ────
 const keys = {};
 document.addEventListener('keydown', e => { keys[e.code] = true; });
 document.addEventListener('keyup',   e => { keys[e.code] = false; });
 
 let yaw = 0, pitch = 0;
-const BOUNDARY = (FLOOR_SIZE / 2) - 2.5; // soft wall, never see edge
+const BOUNDARY = (FLOOR_SIZE / 2) - 2.5;
 
+// ── Mouse look (desktop) ──────────────────────────────
 renderer.domElement.addEventListener('click', () => {
   renderer.domElement.requestPointerLock();
 });
-
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement === renderer.domElement) {
     yaw   -= e.movementX * 0.002;
@@ -7912,8 +7921,69 @@ document.addEventListener('mousemove', e => {
   }
 });
 
-const camDir  = new THREE.Vector3();
-const camRight= new THREE.Vector3();
+// ── Touch state ───────────────────────────────────────
+const touches = {};
+let lastPinchDist = null;
+const prevTouch = {};
+
+renderer.domElement.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    touches[t.identifier] = { x: t.clientX, y: t.clientY };
+    prevTouch[t.identifier] = { x: t.clientX, y: t.clientY };
+  }
+  if (Object.keys(touches).length === 2) {
+    const ids = Object.keys(touches);
+    const a = touches[ids[0]], b = touches[ids[1]];
+    lastPinchDist = Math.hypot(b.x - a.x, b.y - a.y);
+  }
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches)
+    touches[t.identifier] = { x: t.clientX, y: t.clientY };
+
+  const ids = Object.keys(touches);
+
+  if (ids.length === 1) {
+    const id = e.changedTouches[0].identifier;
+    const cur = touches[id];
+    const prv = prevTouch[id] || cur;
+    const dx = cur.x - prv.x;
+    const dy = cur.y - prv.y;
+    prevTouch[id] = { x: cur.x, y: cur.y };
+    yaw   -= dx * 0.004;
+    pitch -= dy * 0.004;
+    pitch  = Math.max(-0.8, Math.min(0.8, pitch));
+
+  } else if (ids.length === 2) {
+    const a = touches[ids[0]], b = touches[ids[1]];
+    const pinchDist = Math.hypot(b.x - a.x, b.y - a.y);
+    if (lastPinchDist !== null) {
+      const delta = (pinchDist - lastPinchDist) * 0.012;
+      camera.getWorldDirection(camDir);
+      camDir.y = 0; camDir.normalize();
+      camera.position.addScaledVector(camDir, delta);
+      // Floor boundary after pinch move
+      camera.position.x = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.x));
+      camera.position.z = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.z));
+    }
+    lastPinchDist = pinchDist;
+  }
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchend', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    delete touches[t.identifier];
+    delete prevTouch[t.identifier];
+  }
+  if (Object.keys(touches).length < 2) lastPinchDist = null;
+}, { passive: false });
+
+const camDir   = new THREE.Vector3();
+const camRight = new THREE.Vector3();
 const MOVE_SPEED = 0.05;
 
 function updateCamera() {
@@ -7925,18 +7995,18 @@ function updateCamera() {
   camDir.y = 0; camDir.normalize();
   camRight.crossVectors(camDir, THREE.Object3D.DefaultUp).normalize();
 
+  // WASD
   const move = new THREE.Vector3();
   if (keys['KeyW'] || keys['ArrowUp'])    move.addScaledVector(camDir,   MOVE_SPEED);
   if (keys['KeyS'] || keys['ArrowDown'])  move.addScaledVector(camDir,  -MOVE_SPEED);
   if (keys['KeyA'] || keys['ArrowLeft'])  move.addScaledVector(camRight,-MOVE_SPEED);
   if (keys['KeyD'] || keys['ArrowRight']) move.addScaledVector(camRight, MOVE_SPEED);
-
   camera.position.add(move);
 
-  // Hard boundary — clamp, never see the edge
+  // Floor boundary
   camera.position.x = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.x));
   camera.position.z = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.z));
-  camera.position.y = 1.8; // fixed eye height
+  camera.position.y = 1.8;
 }
 
 // ── Painter's pass sorting ─────────────────────────────
@@ -7972,13 +8042,8 @@ function animate(t) {
   // Orbit & billboard flags
   for (const flag of flags) {
     flag.userData.orbitAngle += flag.userData.orbitSpeed * dt;
-    const a = flag.userData.orbitAngle;
-    flag.position.set(
-      Math.cos(a) * FLAG_RADIUS,
-      FLAG_HEIGHT + Math.sin(flag.userData.bobPhase + t * 0.001) * 0.6,
-      Math.sin(a) * FLAG_RADIUS
-    );
-    // Billboard: face camera
+    const pos = conePosition(flag.userData.orbitAngle);
+    flag.position.copy(pos);
     flag.lookAt(camera.position);
   }
 
