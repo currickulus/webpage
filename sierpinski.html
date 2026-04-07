@@ -25,28 +25,36 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
-// Vertex shader with zoom and zoom center
+
+// Vertex shader — rotate then zoom
 const vsSource = `
   attribute vec2 a_position;
   uniform float u_zoom;
-  uniform vec2 u_zoom_center;
+  uniform vec2  u_zoom_center;
+  uniform float u_angle;
   void main() {
-    vec2 zoomed = (a_position - u_zoom_center) * u_zoom + u_zoom_center;
-    vec2 zeroToOne = zoomed;
-    vec2 zeroToTwo = zeroToOne * 2.0;
-    vec2 clipSpace = zeroToTwo - 1.0;
+    // Rotate around zoom center
+    vec2 p = a_position - u_zoom_center;
+    float s = sin(u_angle), c = cos(u_angle);
+    p = vec2(p.x*c - p.y*s, p.x*s + p.y*c);
+    p = p + u_zoom_center;
+    // Then zoom
+    vec2 zoomed = (p - u_zoom_center) * u_zoom + u_zoom_center;
+    vec2 clipSpace = zoomed * 2.0 - 1.0;
     gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
     gl_PointSize = 1.5;
   }
 `;
-// Fragment shader — glowing white points on black
+
+// Fragment shader — white points on black
 const fsSource = `
   precision mediump float;
   void main() {
     gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
   }
 `;
-// Compile shader
+
+// Compile shader helper
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -58,7 +66,8 @@ function createShader(gl, type, source) {
   }
   return shader;
 }
-const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+
+const vertexShader   = createShader(gl, gl.VERTEX_SHADER,   vsSource);
 const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
 const program = gl.createProgram();
 gl.attachShader(program, vertexShader);
@@ -68,39 +77,47 @@ if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
   console.error(gl.getProgramInfoLog(program));
 }
 gl.useProgram(program);
+
 // Attributes & uniforms
-const positionLoc = gl.getAttribLocation(program, 'a_position');
-const zoomLoc = gl.getUniformLocation(program, 'u_zoom');
-const zoomCenterLoc = gl.getUniformLocation(program, 'u_zoom_center');
+const positionLoc  = gl.getAttribLocation(program,  'a_position');
+const zoomLoc      = gl.getUniformLocation(program,  'u_zoom');
+const zoomCenterLoc= gl.getUniformLocation(program,  'u_zoom_center');
+const angleLoc     = gl.getUniformLocation(program,  'u_angle');
+
 const positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 gl.enableVertexAttribArray(positionLoc);
 gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
-// Custom attractors
+
+// Attractors
 const attractors = new Float32Array([
-  0.00, 0.75, // top
+   0.00,  0.75,  // top
   -0.65, -0.375, // bottom-left
-  0.65, -0.375 // bottom-right
+   0.65, -0.375  // bottom-right
 ]);
+
 // Normalization params
 const minX = -0.65, maxX = 0.65, minY = -0.375, maxY = 0.75;
 const rangeX = maxX - minX;
 const rangeY = maxY - minY;
-// Current point (start near center)
+
 let current = { x: 0.0, y: 0.0 };
-// Points buffer in normalized [0,1], y flipped (0 top, 1 bottom)
+
 const MAX_POINTS = 1000000;
 let points = new Float32Array(MAX_POINTS * 2);
-let count = 0;
+let count  = 0;
+
 let lastTime = performance.now();
-let zoom = 1.0;
+let zoom     = 1.0;
+let angle    = 0.0;  // declared outside animate so it accumulates
+
 const zoomRate = 0.0002;
-// Zoom center at bottom-right corner (normalized)
-const targetNormX = 1.0;
-const targetNormY = 0.0;
-const zoomCenter = [targetNormX, 1 - targetNormY];
+
+// Zoom center at bottom-right (normalized)
+const zoomCenter = [1.0, 1.0];
 gl.uniform2fv(zoomCenterLoc, zoomCenter);
-// Function to check if point is in triangle
+
+// Triangle membership test
 function isInTriangle(px, py, v1x, v1y, v2x, v2y, v3x, v3y) {
   const d1 = (px - v2x) * (v1y - v2y) - (v1x - v2x) * (py - v2y);
   const d2 = (px - v3x) * (v2y - v3y) - (v2x - v3x) * (py - v3y);
@@ -109,39 +126,45 @@ function isInTriangle(px, py, v1x, v1y, v2x, v2y, v3x, v3y) {
   const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
   return !(hasNeg && hasPos);
 }
+
 // Pre-generate initial fractal
 for (let i = 0; i < MAX_POINTS; i++) {
   const idx = Math.floor(Math.random() * 3) * 2;
-  const tx = attractors[idx];
-  const ty = attractors[idx + 1];
-  current.x = (current.x + tx) * 0.5;
-  current.y = (current.y + ty) * 0.5;
+  current.x = (current.x + attractors[idx])     * 0.5;
+  current.y = (current.y + attractors[idx + 1]) * 0.5;
   const normX = (current.x - minX) / rangeX;
   const normY = (current.y - minY) / rangeY;
-  points[i * 2] = normX;
+  points[i * 2]     = normX;
   points[i * 2 + 1] = 1 - normY;
 }
 count = MAX_POINTS;
 gl.bufferData(gl.ARRAY_BUFFER, points, gl.DYNAMIC_DRAW);
+
 // Animation loop
 function animate(time) {
   const delta = time - lastTime;
   lastTime = time;
+
+  // Accumulate rotation
+  angle += 0.0001 * delta;
+  gl.uniform1f(angleLoc, angle);
+
   // Update zoom
   zoom *= 1 + (zoomRate * delta);
   gl.uniform1f(zoomLoc, zoom);
-  // Dive into lower right sub-triangle if zoom threshold reached
+
+  // Dive into lower-right sub-triangle when zoom doubles
   if (zoom >= 2.0) {
     zoom /= 2.0;
     const v1x = attractors[0], v1y = attractors[1]; // top
-    const v2x = attractors[2], v2y = attractors[3]; // bl
-    const tx = attractors[4], ty = attractors[5]; // br
+    const v2x = attractors[2], v2y = attractors[3]; // bottom-left
+    const tx  = attractors[4], ty  = attractors[5]; // bottom-right (dive target)
     const mid13x = (v1x + tx) * 0.5, mid13y = (v1y + ty) * 0.5;
     const mid23x = (v2x + tx) * 0.5, mid23y = (v2y + ty) * 0.5;
-    // Transform current
+
     current.x = current.x * 2 - tx;
     current.y = current.y * 2 - ty;
-    // Filter and transform points
+
     const new_points = new Float32Array(MAX_POINTS * 2);
     let new_count = 0;
     for (let i = 0; i < count * 2; i += 2) {
@@ -152,38 +175,35 @@ function animate(time) {
       if (isInTriangle(x, y, tx, ty, mid13x, mid13y, mid23x, mid23y)) {
         const x_prime = x * 2 - tx;
         const y_prime = y * 2 - ty;
-        const new_normX = (x_prime - minX) / rangeX;
-        const new_normY = (y_prime - minY) / rangeY;
-        new_points[new_count * 2] = new_normX;
-        new_points[new_count * 2 + 1] = 1 - new_normY;
+        new_points[new_count * 2]     = (x_prime - minX) / rangeX;
+        new_points[new_count * 2 + 1] = 1 - (y_prime - minY) / rangeY;
         new_count++;
       }
     }
     points = new_points;
-    count = new_count;
+    count  = new_count;
   }
-  // Generate new points if there's room
+
+  // Refill buffer with new chaos-game points
   const batchSize = Math.min(40000, MAX_POINTS - count);
   for (let i = 0; i < batchSize; i++) {
     const idx = Math.floor(Math.random() * 3) * 2;
-    const tx = attractors[idx];
-    const ty = attractors[idx + 1];
-    current.x = (current.x + tx) * 0.5;
-    current.y = (current.y + ty) * 0.5;
+    current.x = (current.x + attractors[idx])     * 0.5;
+    current.y = (current.y + attractors[idx + 1]) * 0.5;
     const normX = (current.x - minX) / rangeX;
     const normY = (current.y - minY) / rangeY;
-    points[count * 2] = normX;
+    points[count * 2]     = normX;
     points[count * 2 + 1] = 1 - normY;
     count++;
   }
-  // Upload the buffer
+
   gl.bufferData(gl.ARRAY_BUFFER, points.subarray(0, count * 2), gl.DYNAMIC_DRAW);
-  // Clear & draw
-  gl.clearColor(0,0,0,1);
+  gl.clearColor(0, 0, 0, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.POINTS, 0, count);
   requestAnimationFrame(animate);
 }
+
 requestAnimationFrame(animate);
 </script>
 </body>

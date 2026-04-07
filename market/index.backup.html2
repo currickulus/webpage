@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>CURRICKULUS TEST</title>
+<style>body { background:#000; color:#0f0; font-family:monospace; padding:50px; }</style>
+</head>
+<body>
+<h1>CURRICKULUS MARKET SUITE - TEST PAGE</h1>
+<p id="status">Trying to load real price...</p>
+<p id="price" style="font-size:48px;color:#0f0;">MYMU26: ---</p>
+
+<script>
+fetch('http://192.168.122.50:5050/bars')
+  .then(r => r.json())
+  .then(data => {
+    if (data && data.length > 0) {
+      const p = data[data.length-1].c;
+      document.getElementById('price').textContent = 'MYMU26: ' + p.toFixed(0);
+      document.getElementById('status').innerHTML = '✅ SUCCESS - Real data from VM';
+    }
+  })
+  .catch(err => {
+    document.getElementById('status').innerHTML = '❌ FAILED: ' + err.message;
+  });
+</script>
+</body>
+</html>

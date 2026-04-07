@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -16,44 +16,41 @@
 </head>
 <body>
 <div id="hud">WASD — MOVE &nbsp;|&nbsp; MOUSE — LOOK &nbsp;|&nbsp; CLICK TO LOCK &nbsp;‖&nbsp; 1 FINGER — LOOK &nbsp;|&nbsp; PINCH — FORWARD / BACK</div>
-
-<!-- Gasket canvas (offscreen source) -->
 <canvas id="gasket" style="display:none"></canvas>
-
-<!-- Three.js scene canvas -->
 <div id="scene"></div>
-
 <script>
 // ═══════════════════════════════════════════════════════
-// GASKET — runs on its own WebGL context, renders to FBO
+// GASKET — separate WebGL context, renders to offscreen canvas
+// Uses chaos game chaos with infinite descent into lower-right sub-triangle
 // ═══════════════════════════════════════════════════════
 const gasketCanvas = document.getElementById('gasket');
 gasketCanvas.width  = 512;
 gasketCanvas.height = 512;
 const gg = gasketCanvas.getContext('webgl');
 
+// Vertex shader: rotate around zoom center, then zoom
 const gVS = `
   attribute vec2 a_pos;
   uniform float u_zoom;
   uniform float u_angle;
   uniform vec2  u_center;
   void main() {
-    vec2 c = a_pos - u_center;
+    vec2 p = a_pos - u_center;
     float s = sin(u_angle), co = cos(u_angle);
-    vec2 r = vec2(c.x*co - c.y*s, c.x*s + c.y*co);
+    vec2 r = vec2(p.x*co - p.y*s, p.x*s + p.y*co);
     vec2 z = r * u_zoom + u_center;
     vec2 clip = (z * 2.0) - 1.0;
     gl_Position  = vec4(clip * vec2(1,-1), 0, 1);
     gl_PointSize = 1.2;
   }
 `;
+// Fragment shader: white points on black
 const gFS = `
   precision mediump float;
   void main() {
-    gl_FragColor = vec4(0.05, 0.9, 0.3, 1.0);
+    gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
   }
 `;
-
 function makeShader(gl, type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src); gl.compileShader(s); return s;
@@ -63,54 +60,121 @@ gg.attachShader(gProg, makeShader(gg, gg.VERTEX_SHADER,   gVS));
 gg.attachShader(gProg, makeShader(gg, gg.FRAGMENT_SHADER, gFS));
 gg.linkProgram(gProg); gg.useProgram(gProg);
 
-// Generate gasket points
-const GPTS = 120000;
-const gData = new Float32Array(GPTS * 2);
-const att = [0.1,0.1, 0.9,0.1, 0.5,0.9];
-let gx = 0.5, gy = 0.5;
-for (let i = 0; i < GPTS; i++) {
-  const t = Math.floor(Math.random()*3)*2;
-  gx = (gx + att[t])   * 0.5;
-  gy = (gy + att[t+1]) * 0.5;
-  gData[i*2]   = gx;
-  gData[i*2+1] = gy;
-}
+// Attractors match sierpinski.html: top, bottom-left, bottom-right
+const gAttractors = new Float32Array([
+   0.00,  0.75,  // top
+  -0.65, -0.375, // bottom-left
+   0.65, -0.375  // bottom-right (dive target)
+]);
+const gMinX = -0.65, gMaxX = 0.65, gMinY = -0.375, gMaxY = 0.75;
+const gRangeX = gMaxX - gMinX;
+const gRangeY = gMaxY - gMinY;
+
+const MAX_GPTS = 500000;
+let gPoints = new Float32Array(MAX_GPTS * 2);
+let gCount  = 0;
+let gCurrent = { x: 0.0, y: 0.0 };
+
 const gBuf = gg.createBuffer();
 gg.bindBuffer(gg.ARRAY_BUFFER, gBuf);
-gg.bufferData(gg.ARRAY_BUFFER, gData, gg.STATIC_DRAW);
-const gPosLoc = gg.getAttribLocation(gProg,'a_pos');
+gg.bufferData(gg.ARRAY_BUFFER, gPoints, gg.DYNAMIC_DRAW);
+
+const gPosLoc    = gg.getAttribLocation(gProg,  'a_pos');
 gg.enableVertexAttribArray(gPosLoc);
 gg.vertexAttribPointer(gPosLoc, 2, gg.FLOAT, false, 8, 0);
 
-const gZoomLoc   = gg.getUniformLocation(gProg,'u_zoom');
-const gAngleLoc  = gg.getUniformLocation(gProg,'u_angle');
-const gCenterLoc = gg.getUniformLocation(gProg,'u_center');
+const gZoomLoc   = gg.getUniformLocation(gProg, 'u_zoom');
+const gAngleLoc  = gg.getUniformLocation(gProg, 'u_angle');
+const gCenterLoc = gg.getUniformLocation(gProg, 'u_center');
 
-let gZoom = 1.0, gAngle = 0.0;
-// Zoom target: centroid of the bottom sub-triangle (the void it sinks into)
-// Attractors are at [0.1,0.1], [0.9,0.1], [0.5,0.9]
-// Bottom triangle centroid = midpoint of bottom two attractors = (0.5, 0.1)
-const GCENTER = [0.5, 0.367]; // slightly above base — centroid of whole gasket
+let gZoom  = 1.0;
+let gAngle = 0.0;
+const gZoomRate = 0.0002;
 
+// Zoom center: bottom-right attractor in normalized [0,1] coords
+const gZoomCenter = [
+  (0.65  - gMinX) / gRangeX,        // normX of bottom-right
+  1 - (-0.375 - gMinY) / gRangeY    // normY (flipped) of bottom-right
+];
+gg.uniform2fv(gCenterLoc, gZoomCenter);
+
+// Triangle membership test (for dive filtering)
+function gInTriangle(px, py, v1x, v1y, v2x, v2y, v3x, v3y) {
+  const d1 = (px-v2x)*(v1y-v2y) - (v1x-v2x)*(py-v2y);
+  const d2 = (px-v3x)*(v2y-v3y) - (v2x-v3x)*(py-v3y);
+  const d3 = (px-v1x)*(v3y-v1y) - (v3x-v1x)*(py-v1y);
+  const hasNeg = (d1<0)||(d2<0)||(d3<0);
+  const hasPos = (d1>0)||(d2>0)||(d3>0);
+  return !(hasNeg && hasPos);
+}
+
+// Pre-generate initial point cloud
+for (let i = 0; i < MAX_GPTS; i++) {
+  const idx = Math.floor(Math.random() * 3) * 2;
+  gCurrent.x = (gCurrent.x + gAttractors[idx])     * 0.5;
+  gCurrent.y = (gCurrent.y + gAttractors[idx + 1]) * 0.5;
+  gPoints[i*2]   = (gCurrent.x - gMinX) / gRangeX;
+  gPoints[i*2+1] = 1 - (gCurrent.y - gMinY) / gRangeY;
+}
+gCount = MAX_GPTS;
+gg.bufferData(gg.ARRAY_BUFFER, gPoints, gg.DYNAMIC_DRAW);
+
+// tickGasket: called each frame from the main animate loop with dt in ms
 function tickGasket(dt) {
-  gAngle += 0.0003 * dt;
-  gZoom  *= 1.0 + 0.00012 * dt;
+  // Accumulate rotation
+  gAngle += 0.0001 * dt;
+
+  // Zoom continuously, dive into bottom-right sub-triangle when zoom doubles
+  gZoom *= 1 + (gZoomRate * dt);
   if (gZoom >= 2.0) {
     gZoom /= 2.0;
-    // On reset, shift zoom center to stay locked on the self-similar void
-    // This gives the illusion of continuously sinking into the triangle gap
+    const v1x = gAttractors[0], v1y = gAttractors[1]; // top
+    const v2x = gAttractors[2], v2y = gAttractors[3]; // bottom-left
+    const tx  = gAttractors[4], ty  = gAttractors[5]; // bottom-right (dive)
+    const mid13x = (v1x+tx)*0.5, mid13y = (v1y+ty)*0.5;
+    const mid23x = (v2x+tx)*0.5, mid23y = (v2y+ty)*0.5;
+
+    gCurrent.x = gCurrent.x * 2 - tx;
+    gCurrent.y = gCurrent.y * 2 - ty;
+
+    const newPts = new Float32Array(MAX_GPTS * 2);
+    let newCount = 0;
+    for (let i = 0; i < gCount * 2; i += 2) {
+      const normX = gPoints[i];
+      const flipY = gPoints[i+1];
+      const x = normX * gRangeX + gMinX;
+      const y = (1 - flipY) * gRangeY + gMinY;
+      if (gInTriangle(x, y, tx, ty, mid13x, mid13y, mid23x, mid23y)) {
+        const xp = x*2 - tx;
+        const yp = y*2 - ty;
+        newPts[newCount*2]   = (xp - gMinX) / gRangeX;
+        newPts[newCount*2+1] = 1 - (yp - gMinY) / gRangeY;
+        newCount++;
+      }
+    }
+    gPoints = newPts;
+    gCount  = newCount;
   }
-  gg.clearColor(0,0,0,1);
+
+  // Refill with new chaos-game points
+  const batch = Math.min(20000, MAX_GPTS - gCount);
+  for (let i = 0; i < batch; i++) {
+    const idx = Math.floor(Math.random() * 3) * 2;
+    gCurrent.x = (gCurrent.x + gAttractors[idx])     * 0.5;
+    gCurrent.y = (gCurrent.y + gAttractors[idx + 1]) * 0.5;
+    gPoints[gCount*2]   = (gCurrent.x - gMinX) / gRangeX;
+    gPoints[gCount*2+1] = 1 - (gCurrent.y - gMinY) / gRangeY;
+    gCount++;
+  }
+
+  gg.bufferData(gg.ARRAY_BUFFER, gPoints.subarray(0, gCount*2), gg.DYNAMIC_DRAW);
+  gg.clearColor(0, 0, 0, 1);
   gg.clear(gg.COLOR_BUFFER_BIT);
   gg.uniform1f(gZoomLoc,  gZoom);
   gg.uniform1f(gAngleLoc, gAngle);
-  gg.uniform2fv(gCenterLoc, GCENTER);
-  gg.drawArrays(gg.POINTS, 0, GPTS);
+  gg.uniform2fv(gCenterLoc, gZoomCenter);
+  gg.drawArrays(gg.POINTS, 0, gCount);
 }
-
-// ═══════════════════════════════════════════════════════
-// THREE.JS SCENE
-// ═══════════════════════════════════════════════════════
 </script>
 
 <script type="importmap">
@@ -121,11 +185,9 @@ function tickGasket(dt) {
   }
 }
 </script>
-
 <script type="module">
 import * as THREE from 'three';
 import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
-
 
 // ── Renderer ──────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -135,27 +197,27 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.getElementById('scene').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a12);
-scene.fog = new THREE.Fog(0x0a0a12, 18, 35);
+scene.background = new THREE.Color(0x080808);
+scene.fog = new THREE.Fog(0x080808, 18, 35);
 
 // ── Camera ────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
 camera.position.set(0, 1.8, 6);
 camera.lookAt(0, 1, 0);
 
-// ── Gasket Texture (live FBO) ─────────────────────────
+// ── Gasket Texture (live from offscreen WebGL canvas) ─
 const gasketTex = new THREE.CanvasTexture(gasketCanvas);
 gasketTex.wrapS = gasketTex.wrapT = THREE.RepeatWrapping;
 gasketTex.repeat.set(3, 3);
 
 // ── Floor ─────────────────────────────────────────────
 const FLOOR_SIZE = 20;
-const floorGeo  = new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE);
-const floorMat  = new THREE.MeshPhongMaterial({
+const floorGeo = new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE);
+const floorMat = new THREE.MeshPhongMaterial({
   map: gasketTex,
   shininess: 40,
-  color: 0x88ffaa,
-  emissive: 0x002200,
+  color: 0xffffff,
+  emissive: 0x000000,
 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
@@ -165,7 +227,6 @@ scene.add(floor);
 // ── Lights ────────────────────────────────────────────
 const ambient = new THREE.AmbientLight(0x334455, 0.6);
 scene.add(ambient);
-
 const sun = new THREE.DirectionalLight(0xfff0cc, 1.2);
 sun.position.set(5, 10, 5);
 sun.castShadow = true;
@@ -176,16 +237,13 @@ sun.shadow.camera.far  = 40;
 sun.shadow.camera.left = sun.shadow.camera.bottom = -12;
 sun.shadow.camera.right = sun.shadow.camera.top   =  12;
 scene.add(sun);
-
 const rimLight = new THREE.PointLight(0x4488ff, 0.8, 20);
 rimLight.position.set(-4, 3, -2);
 scene.add(rimLight);
 
-// ── Utah Teapot (TeapotGeometry addon) ────────────────
+// ── Utah Teapot ───────────────────────────────────────
 const teapotGeo = new TeapotGeometry(0.9, 10);
-const teapotMat = new THREE.MeshPhongMaterial({
-  color: 0xcc8833, shininess: 120, specular: 0xffffff
-});
+const teapotMat = new THREE.MeshPhongMaterial({ color: 0xcc8833, shininess: 120, specular: 0xffffff });
 const teapot = new THREE.Mesh(teapotGeo, teapotMat);
 teapot.position.set(-4.5, 0.9, -3);
 teapot.castShadow = true;
@@ -206,7 +264,6 @@ scene.add(sphere);
   });
 }
 
-
 // ── Cube ──────────────────────────────────────────────
 const cubeGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
 const cubeMat = new THREE.MeshPhongMaterial({
@@ -218,12 +275,12 @@ cube.position.set(4, 0.6, 3);
 cube.castShadow = true;
 scene.add(cube);
 
-// ── Bunny ─────────────────────────────────────────────
+// ── Stanford Bunny ────────────────────────────────────
 function parseOBJ(text) {
   const verts = [], faces = [];
   for (const line of text.split('\n')) {
     const p = line.trim().split(/\s+/);
-    if (p[0] === 'v')  verts.push([+p[1], +p[2], +p[3]]);
+    if (p[0] === 'v') verts.push([+p[1], +p[2], +p[3]]);
     if (p[0] === 'f') {
       const idx = p.slice(1).map(s => parseInt(s.split('/')[0]) - 1);
       for (let i = 1; i < idx.length - 1; i++)
@@ -232,20 +289,13 @@ function parseOBJ(text) {
   }
   const pos = new Float32Array(faces.length * 9);
   let i = 0;
-  for (const [a,b,c] of faces) {
-    for (const vi of [a,b,c]) {
-      pos[i++] = verts[vi][0];
-      pos[i++] = verts[vi][1];
-      pos[i++] = verts[vi][2];
-    }
-  }
+  for (const [a,b,c] of faces)
+    for (const vi of [a,b,c]) { pos[i++]=verts[vi][0]; pos[i++]=verts[vi][1]; pos[i++]=verts[vi][2]; }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.computeVertexNormals();
   return geo;
 }
-
-
 let bunny;
 fetch('bunny.obj')
   .then(r => r.text())
@@ -254,106 +304,58 @@ fetch('bunny.obj')
     bunnyGeo.computeBoundingBox();
     const bb = bunnyGeo.boundingBox;
     const bScale = 6.0 / (bb.max.y - bb.min.y);
-    const bunnyMat = new THREE.MeshPhongMaterial({
-      color: 0xddddcc, shininess: 20, specular: 0x334422
-    });
+    const smallScale = bScale * 0.25; // scaled down to 25%
+    const bunnyMat = new THREE.MeshPhongMaterial({ color: 0xddddcc, shininess: 20, specular: 0x334422 });
     bunny = new THREE.Mesh(bunnyGeo, bunnyMat);
-    bunny.scale.setScalar(bScale);
-    bunny.position.set(-3, -(bb.min.y * bScale), 3);
+    bunny.scale.setScalar(smallScale);
+    bunny.position.set(-3, -(bb.min.y * smallScale), 3);
+    bunny.rotation.y = Math.atan2(0 - (-3), 0 - 3); // face center
     bunny.castShadow = true;
     scene.add(bunny);
   });
 
-
-// ── Logo Silhouette (Currickulus) ─────────────────────
-// Traced from the logo: orb center, top spike, bottom spike,
-// swept wings with feather cuts, four talons
-
-function buildLogoShape() {
-  const shape = new THREE.Shape();
-  // Central orb
-  shape.absarc(0, 0, 0.38, 0, Math.PI*2, false);
-  // Top arrow spike
-  const spike_top = new THREE.Path();
-  spike_top.moveTo(0, 0.38);
-  spike_top.lineTo(-0.05, 0.62);
-  spike_top.lineTo(0, 0.95);
-  spike_top.lineTo(0.05, 0.62);
-  spike_top.closePath();
-  // Bottom arrow spike
-  const spike_bot = new THREE.Path();
-  spike_bot.moveTo(0, -0.38);
-  spike_bot.lineTo(-0.05, -0.62);
-  spike_bot.lineTo(0, -0.95);
-  spike_bot.lineTo(0.05, -0.62);
-  spike_bot.closePath();
-
-  // Build full merged shape as custom path
-  const s = new THREE.Shape();
-  // Orb
-  s.absarc(0, 0.05, 0.38, 0, Math.PI*2, false);
-  return s;
-}
-
-// Logo as extruded flat shape — drawn as a group of meshes
+// ── Currickulus Logo Mesh ─────────────────────────────
 function buildLogoMesh(color) {
   const group = new THREE.Group();
-
-  // Orb
   const orbGeo = new THREE.CircleGeometry(0.38, 32);
-  // Top spike
   const spikeTopGeo = new THREE.BufferGeometry();
   spikeTopGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-    0,0.36,0,  -0.06,0.58,0,  0,0.92,0,  0.06,0.58,0
+    0,0.36,0, -0.06,0.58,0, 0,0.92,0, 0.06,0.58,0
   ]), 3));
   spikeTopGeo.setIndex([0,1,2, 0,2,3]);
   spikeTopGeo.computeVertexNormals();
-  // Bottom spike
   const spikeBotGeo = new THREE.BufferGeometry();
   spikeBotGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-    0,-0.36,0,  0.06,-0.58,0,  0,-0.92,0,  -0.06,-0.58,0
+    0,-0.36,0, 0.06,-0.58,0, 0,-0.92,0, -0.06,-0.58,0
   ]), 3));
   spikeBotGeo.setIndex([0,1,2, 0,2,3]);
   spikeBotGeo.computeVertexNormals();
-
-  // Wings (left) — swept feather shape
   const wingLGeo = new THREE.BufferGeometry();
   wingLGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-    -0.36, 0.22,0,  -0.65,0.52,0,  -0.95,0.18,0,  -1.15,-0.05,0,
-    -0.90,-0.10,0,  -0.60,-0.02,0,  -0.38,-0.18,0
+    -0.36,0.22,0, -0.65,0.52,0, -0.95,0.18,0, -1.15,-0.05,0,
+    -0.90,-0.10,0, -0.60,-0.02,0, -0.38,-0.18,0
   ]), 3));
   wingLGeo.setIndex([0,1,2, 0,2,3, 0,3,4, 0,4,5, 0,5,6]);
   wingLGeo.computeVertexNormals();
-
-  // Wings (right) — mirror
   const wingRGeo = new THREE.BufferGeometry();
   wingRGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-    0.36, 0.22,0,  0.65,0.52,0,  0.95,0.18,0,  1.15,-0.05,0,
-    0.90,-0.10,0,  0.60,-0.02,0,  0.38,-0.18,0
+    0.36,0.22,0, 0.65,0.52,0, 0.95,0.18,0, 1.15,-0.05,0,
+    0.90,-0.10,0, 0.60,-0.02,0, 0.38,-0.18,0
   ]), 3));
   wingRGeo.setIndex([0,2,1, 0,3,2, 0,4,3, 0,5,4, 0,6,5]);
   wingRGeo.computeVertexNormals();
-
-  // Talons (4 curved claws)
   function talonGeo(x, y, flipX) {
     const f = flipX ? -1 : 1;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-      x*f, y, 0,
-      (x+0.06)*f, y-0.12, 0,
-      (x+0.22)*f, y-0.45, 0,
-      (x+0.32)*f, y-0.55, 0,
-      (x+0.18)*f, y-0.48, 0,
-      (x+0.06)*f, y-0.22, 0,
-      (x-0.04)*f, y-0.08, 0,
+      x*f,y,0, (x+0.06)*f,y-0.12,0, (x+0.22)*f,y-0.45,0, (x+0.32)*f,y-0.55,0,
+      (x+0.18)*f,y-0.48,0, (x+0.06)*f,y-0.22,0, (x-0.04)*f,y-0.08,0,
     ]), 3));
     g.setIndex([0,1,6, 1,5,6, 1,2,5, 2,4,5, 2,3,4]);
     g.computeVertexNormals();
     return g;
   }
-
   const mat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.55 });
-
   for (const geo of [orbGeo, spikeTopGeo, spikeBotGeo, wingLGeo, wingRGeo,
                      talonGeo(0.22,-0.34,false), talonGeo(0.22,-0.34,true),
                      talonGeo(0.42,-0.28,false),  talonGeo(0.42,-0.28,true)]) {
@@ -362,50 +364,35 @@ function buildLogoMesh(color) {
   return group;
 }
 
-// ── Flags — billboarded logo quads orbiting overhead ──
-const FLAG_COLORS = [0xff3300, 0x00ccff, 0xffdd00, 0xff00aa, 0x44ff88];
+// ── Flags orbiting overhead on invisible cone ──────────
+const FLAG_COLORS = [0xff3300, 0x00ccff, 0xffdd00, 0xff00aa, 0xaa44ff];
 const flags = [];
-const FLAG_COUNT   = 14;
-const CONE_TOP_R   = 1.8;   // narrow end (top)
-const CONE_BOT_R   = 9.0;   // wide end (base)
-const CONE_TOP_Y   = 8.5;   // height of narrow end
-const CONE_BOT_Y   = 1.2;   // height of wide end
-
+const FLAG_COUNT = 14;
+const CONE_TOP_R = 1.8, CONE_BOT_R = 9.0;
+const CONE_TOP_Y = 8.5, CONE_BOT_Y = 1.2;
 for (let i = 0; i < FLAG_COUNT; i++) {
-  const color = FLAG_COLORS[i % FLAG_COLORS.length];
-  const logo  = buildLogoMesh(color);
-  // Distribute evenly along the cone's t parameter (0=top, 1=bottom)
+  const logo = buildLogoMesh(FLAG_COLORS[i % FLAG_COLORS.length]);
   const t0 = i / FLAG_COUNT;
-  const angle0 = t0 * Math.PI * 2 * 3; // 3 full wraps around the cone
-  logo.userData.orbitAngle = angle0;
+  logo.userData.orbitAngle = t0 * Math.PI * 2 * 3;
   logo.userData.orbitSpeed = 0.00018 + (i % 3) * 0.00006;
   scene.add(logo);
   flags.push(logo);
 }
-
-// Returns position on the cone surface given a continuous angle
-// The cone param t cycles 0→1 mapped from angle mod (2π*wraps)
 function conePosition(angle) {
   const WRAPS = 3.0;
-  // t goes 0→1 as angle goes through WRAPS full rotations, then resets
-  const t = ((angle % (Math.PI * 2 * WRAPS)) / (Math.PI * 2 * WRAPS) + 1) % 1;
+  const t = ((angle % (Math.PI*2*WRAPS)) / (Math.PI*2*WRAPS) + 1) % 1;
   const r = CONE_TOP_R + (CONE_BOT_R - CONE_TOP_R) * t;
   const y = CONE_TOP_Y + (CONE_BOT_Y - CONE_TOP_Y) * t;
-  return new THREE.Vector3(Math.cos(angle) * r, y, Math.sin(angle) * r);
+  return new THREE.Vector3(Math.cos(angle)*r, y, Math.sin(angle)*r);
 }
 
-// ── Camera Controller (WASD + mouse look + touch) ────
+// ── Camera Controller (WASD + mouse + touch) ──────────
 const keys = {};
 document.addEventListener('keydown', e => { keys[e.code] = true; });
 document.addEventListener('keyup',   e => { keys[e.code] = false; });
-
 let yaw = 0, pitch = 0;
 const BOUNDARY = (FLOOR_SIZE / 2) - 2.5;
-
-// ── Mouse look (desktop) ──────────────────────────────
-renderer.domElement.addEventListener('click', () => {
-  renderer.domElement.requestPointerLock();
-});
+renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement === renderer.domElement) {
     yaw   -= e.movementX * 0.002;
@@ -413,145 +400,94 @@ document.addEventListener('mousemove', e => {
     pitch  = Math.max(-0.8, Math.min(0.8, pitch));
   }
 });
-
-// ── Touch state ───────────────────────────────────────
-const touches = {};
+const touches = {}, prevTouch = {};
 let lastPinchDist = null;
-const prevTouch = {};
-
 renderer.domElement.addEventListener('touchstart', e => {
   e.preventDefault();
-  for (const t of e.changedTouches) {
-    touches[t.identifier] = { x: t.clientX, y: t.clientY };
-    prevTouch[t.identifier] = { x: t.clientX, y: t.clientY };
-  }
-  if (Object.keys(touches).length === 2) {
-    const ids = Object.keys(touches);
-    const a = touches[ids[0]], b = touches[ids[1]];
-    lastPinchDist = Math.hypot(b.x - a.x, b.y - a.y);
-  }
+  for (const t of e.changedTouches) { touches[t.identifier]={x:t.clientX,y:t.clientY}; prevTouch[t.identifier]={x:t.clientX,y:t.clientY}; }
+  if (Object.keys(touches).length===2) { const ids=Object.keys(touches); lastPinchDist=Math.hypot(touches[ids[1]].x-touches[ids[0]].x, touches[ids[1]].y-touches[ids[0]].y); }
 }, { passive: false });
-
 renderer.domElement.addEventListener('touchmove', e => {
   e.preventDefault();
-  for (const t of e.changedTouches)
-    touches[t.identifier] = { x: t.clientX, y: t.clientY };
-
+  for (const t of e.changedTouches) touches[t.identifier]={x:t.clientX,y:t.clientY};
   const ids = Object.keys(touches);
-
-  if (ids.length === 1) {
-    const id = e.changedTouches[0].identifier;
-    const cur = touches[id];
-    const prv = prevTouch[id] || cur;
-    const dx = cur.x - prv.x;
-    const dy = cur.y - prv.y;
-    prevTouch[id] = { x: cur.x, y: cur.y };
-    yaw   -= dx * 0.004;
-    pitch -= dy * 0.004;
-    pitch  = Math.max(-0.8, Math.min(0.8, pitch));
-
-  } else if (ids.length === 2) {
-    const a = touches[ids[0]], b = touches[ids[1]];
-    const pinchDist = Math.hypot(b.x - a.x, b.y - a.y);
-    if (lastPinchDist !== null) {
-      const delta = (pinchDist - lastPinchDist) * 0.012;
-      camera.getWorldDirection(camDir);
-      camDir.y = 0; camDir.normalize();
-      camera.position.addScaledVector(camDir, delta);
-      // Floor boundary after pinch move
-      camera.position.x = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.x));
-      camera.position.z = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.z));
+  if (ids.length===1) {
+    const id=e.changedTouches[0].identifier, cur=touches[id], prv=prevTouch[id]||cur;
+    yaw-=(cur.x-prv.x)*0.004; pitch-=(cur.y-prv.y)*0.004;
+    pitch=Math.max(-0.8,Math.min(0.8,pitch));
+    prevTouch[id]={x:cur.x,y:cur.y};
+  } else if (ids.length===2) {
+    const a=touches[ids[0]],b=touches[ids[1]], d=Math.hypot(b.x-a.x,b.y-a.y);
+    if (lastPinchDist!==null) {
+      const delta=(d-lastPinchDist)*0.012;
+      camera.getWorldDirection(camDir); camDir.y=0; camDir.normalize();
+      camera.position.addScaledVector(camDir,delta);
+      camera.position.x=Math.max(-BOUNDARY,Math.min(BOUNDARY,camera.position.x));
+      camera.position.z=Math.max(-BOUNDARY,Math.min(BOUNDARY,camera.position.z));
     }
-    lastPinchDist = pinchDist;
+    lastPinchDist=d;
   }
 }, { passive: false });
-
 renderer.domElement.addEventListener('touchend', e => {
   e.preventDefault();
-  for (const t of e.changedTouches) {
-    delete touches[t.identifier];
-    delete prevTouch[t.identifier];
-  }
-  if (Object.keys(touches).length < 2) lastPinchDist = null;
+  for (const t of e.changedTouches) { delete touches[t.identifier]; delete prevTouch[t.identifier]; }
+  if (Object.keys(touches).length<2) lastPinchDist=null;
 }, { passive: false });
 
 const camDir   = new THREE.Vector3();
 const camRight = new THREE.Vector3();
 const MOVE_SPEED = 0.05;
-
 function updateCamera() {
   camera.rotation.order = 'YXZ';
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
-
-  camera.getWorldDirection(camDir);
-  camDir.y = 0; camDir.normalize();
-  camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
-
-  // WASD
+  camera.getWorldDirection(camDir); camDir.y=0; camDir.normalize();
+  camRight.crossVectors(camDir, new THREE.Vector3(0,1,0)).normalize();
   const move = new THREE.Vector3();
-  if (keys['KeyW'] || keys['ArrowUp'])    move.addScaledVector(camDir,   MOVE_SPEED);
-  if (keys['KeyS'] || keys['ArrowDown'])  move.addScaledVector(camDir,  -MOVE_SPEED);
-  if (keys['KeyA'] || keys['ArrowLeft'])  move.addScaledVector(camRight,-MOVE_SPEED);
-  if (keys['KeyD'] || keys['ArrowRight']) move.addScaledVector(camRight, MOVE_SPEED);
+  if (keys['KeyW']||keys['ArrowUp'])    move.addScaledVector(camDir,   MOVE_SPEED);
+  if (keys['KeyS']||keys['ArrowDown'])  move.addScaledVector(camDir,  -MOVE_SPEED);
+  if (keys['KeyA']||keys['ArrowLeft'])  move.addScaledVector(camRight,-MOVE_SPEED);
+  if (keys['KeyD']||keys['ArrowRight']) move.addScaledVector(camRight, MOVE_SPEED);
   camera.position.add(move);
-
-  // Floor boundary
   camera.position.x = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.x));
   camera.position.z = Math.max(-BOUNDARY, Math.min(BOUNDARY, camera.position.z));
   camera.position.y = 1.8;
 }
 
-// ── Painter's pass sorting ─────────────────────────────
-// Flags are sorted back-to-front each frame relative to camera
+// ── Painter's sort for transparent flags ──────────────
 function sortFlags() {
   const cpos = camera.position;
-  flags.sort((a, b) => {
-    const da = a.position.distanceToSquared(cpos);
-    const db = b.position.distanceToSquared(cpos);
-    return db - da; // far first
-  });
-  // Re-add in sorted order (painter's algo)
+  flags.sort((a,b) => b.position.distanceToSquared(cpos) - a.position.distanceToSquared(cpos));
   flags.forEach(f => scene.add(f));
 }
 
-// ── Render Loop ───────────────────────────────────────
+// ── Main Render Loop ──────────────────────────────────
 let lastT = 0;
 function animate(t) {
   requestAnimationFrame(animate);
   const dt = t - lastT; lastT = t;
 
-  // Tick gasket and update Three.js texture
+  // Tick the gasket WebGL context and push updated texture to Three.js
   tickGasket(dt);
   gasketTex.needsUpdate = true;
 
-  // Rotate Venus sphere
   sphere.rotation.y += 0.0003 * dt;
+  cube.rotation.y   += 0.0002 * dt;
+  cube.rotation.x   += 0.0001 * dt;
 
-  // Spin cube gently
-  cube.rotation.y += 0.0002 * dt;
-  cube.rotation.x += 0.0001 * dt;
-
-  // Orbit flags along cone surface, oriented tangent to cone like the original
+  // Orbit flags on invisible cone, oriented coplanar to cone surface
   for (const flag of flags) {
     flag.matrixAutoUpdate = true;
     flag.userData.orbitAngle += flag.userData.orbitSpeed * dt;
     const pos = conePosition(flag.userData.orbitAngle);
     flag.position.copy(pos);
-
-    // Plaster flag tangent to the invisible cone surface
-    // Build orientation from cone surface normal directly
-    // Cone surface normal = outward radial + upward slope component
     const slopeAngle = Math.atan2(CONE_BOT_R - CONE_TOP_R, CONE_TOP_Y - CONE_BOT_Y);
     const radial = new THREE.Vector3(pos.x, 0, pos.z).normalize();
-    // Normal points outward and upward along the cone slope
     const normal = new THREE.Vector3(
-      radial.x * Math.cos(slopeAngle),
-      Math.sin(slopeAngle),
-      radial.z * Math.cos(slopeAngle)
+      radial.x * Math.cos(slopeAngle), Math.sin(slopeAngle), radial.z * Math.cos(slopeAngle)
     ).normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3().crossVectors(up, normal).normalize();
+    const up    = new THREE.Vector3(0,1,0);
+    const right  = new THREE.Vector3().crossVectors(up, normal).normalize();
     const trueUp = new THREE.Vector3().crossVectors(normal, right).normalize();
     flag.matrix.makeBasis(right, trueUp, normal);
     flag.matrix.setPosition(pos);
@@ -572,12 +508,5 @@ window.addEventListener('resize', () => {
 
 requestAnimationFrame(animate);
 </script>
-
-<!-- Standalone flag renderer -->
-<script id="flag-standalone-marker">
-// ── STANDALONE FLAGS (copy everything between these markers) ──
-// See currickulus_flags.html for the isolated version
-</script>
-
 </body>
-</html>
+</html>html>

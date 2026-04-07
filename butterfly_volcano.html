@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Currickulus Butterfly Volcano • Painter’s Algorithm</title>
+    <title>Currickulus Butterfly Volcano • Painter's Algorithm</title>
     <style>
         body { margin:0; overflow:hidden; background:#000; }
         canvas { display:block; }
@@ -16,7 +16,7 @@
 <body>
 <div id="info">
     <strong>Butterfly Volcano</strong><br>
-    Currickulus Logo Flags • Painter’s Algorithm • Invisible Conic Section<br>
+    Currickulus Logo Flags • Painter's Algorithm • Invisible Conic Section<br>
     Erupting / descending flow with spreading wings • Multicolored translucent<br>
     Drag to rotate • Scroll to zoom
 </div>
@@ -34,45 +34,67 @@ const BASE_RADIUS = 9.2;
 const APEX_Y = 10.2;
 const TOTAL_FLAGS = 68;   // denser swarm
 
-function buildCurrickulusLogo(color) {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({
-        color: color,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.76,
-        depthWrite: false
-    });
+// ── Logo mesh from the scene (complete, with material + talons) ──────
+function buildLogoMesh(color) {
+  const group = new THREE.Group();
 
-    // Orb + spikes + wings + talons (same clean logo as before)
-    group.add(new THREE.Mesh(new THREE.CircleGeometry(0.38, 48), mat));
-
-    const spikeMat = mat.clone();
-    const topGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([-0.06,0.37,0, 0.06,0.37,0, 0,0.94,0]), 3));
-    topGeo.setIndex([0,1,2]); topGeo.computeVertexNormals();
-    group.add(new THREE.Mesh(topGeo, spikeMat));
-
-    const botGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([-0.06,-0.37,0, 0.06,-0.37,0, 0,-0.94,0]), 3));
-    botGeo.setIndex([0,1,2]); botGeo.computeVertexNormals();
-    group.add(new THREE.Mesh(botGeo, spikeMat));
-
-    const wingGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-        -0.35,0.20,0, -0.82,0.48,0, -1.18,0.15,0, -1.32,-0.12,0, -0.98,-0.22,0, -0.52,-0.10,0
+  // Orb
+  const orbGeo = new THREE.CircleGeometry(0.38, 32);
+  // Top spike
+  const spikeTopGeo = new THREE.BufferGeometry();
+  spikeTopGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    0,0.36,0,  -0.06,0.58,0,  0,0.92,0,  0.06,0.58,0
+  ]), 3));
+  spikeTopGeo.setIndex([0,1,2, 0,2,3]);
+  spikeTopGeo.computeVertexNormals();
+  // Bottom spike
+  const spikeBotGeo = new THREE.BufferGeometry();
+  spikeBotGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    0,-0.36,0,  0.06,-0.58,0,  0,-0.92,0,  -0.06,-0.58,0
+  ]), 3));
+  spikeBotGeo.setIndex([0,1,2, 0,2,3]);
+  spikeBotGeo.computeVertexNormals();
+  // Wings (left) — swept feather shape
+  const wingLGeo = new THREE.BufferGeometry();
+  wingLGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    -0.36, 0.22,0,  -0.65,0.52,0,  -0.95,0.18,0,  -1.15,-0.05,0,
+    -0.90,-0.10,0,  -0.60,-0.02,0,  -0.38,-0.18,0
+  ]), 3));
+  wingLGeo.setIndex([0,1,2, 0,2,3, 0,3,4, 0,4,5, 0,5,6]);
+  wingLGeo.computeVertexNormals();
+  // Wings (right) — mirror
+  const wingRGeo = new THREE.BufferGeometry();
+  wingRGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    0.36, 0.22,0,  0.65,0.52,0,  0.95,0.18,0,  1.15,-0.05,0,
+    0.90,-0.10,0,  0.60,-0.02,0,  0.38,-0.18,0
+  ]), 3));
+  wingRGeo.setIndex([0,2,1, 0,3,2, 0,4,3, 0,5,4, 0,6,5]);
+  wingRGeo.computeVertexNormals();
+  // Talons (4 curved claws)
+  function talonGeo(x, y, flipX) {
+    const f = flipX ? -1 : 1;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      x*f, y, 0,
+      (x+0.06)*f, y-0.12, 0,
+      (x+0.22)*f, y-0.45, 0,
+      (x+0.32)*f, y-0.55, 0,
+      (x+0.18)*f, y-0.48, 0,
+      (x+0.06)*f, y-0.22, 0,
+      (x-0.04)*f, y-0.08, 0,
     ]), 3));
-    wingGeo.setIndex([0,1,2,0,2,3,0,3,4,0,4,5]); wingGeo.computeVertexNormals();
-    const left = new THREE.Mesh(wingGeo, mat);
-    const right = left.clone(); right.scale.x = -1;
-    group.add(left); group.add(right);
+    g.setIndex([0,1,6, 1,5,6, 1,2,5, 2,4,5, 2,3,4]);
+    g.computeVertexNormals();
+    return g;
+  }
 
-    function talon(x, y) {
-        const tg = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([x,y,0, x+0.14,y-0.24,0, x+0.29,y-0.45,0]), 3));
-        tg.setIndex([0,1,2]); tg.computeVertexNormals();
-        group.add(new THREE.Mesh(tg, mat));
-    }
-    talon(0.24,-0.36); talon(0.45,-0.33); talon(-0.24,-0.36); talon(-0.45,-0.33);
-
-    group.scale.set(1.38, 1.38, 1);
-    return group;
+  const mat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.55 });
+  for (const geo of [orbGeo, spikeTopGeo, spikeBotGeo, wingLGeo, wingRGeo,
+                     talonGeo(0.22,-0.34,false), talonGeo(0.22,-0.34,true),
+                     talonGeo(0.42,-0.28,false),  talonGeo(0.42,-0.28,true)]) {
+    group.add(new THREE.Mesh(geo, mat));
+  }
+  return group;
 }
 
 function init() {
@@ -93,10 +115,10 @@ function init() {
     const dl1 = new THREE.DirectionalLight(0xffddaa, 1.35); dl1.position.set(15, 22, 12); scene.add(dl1);
     const dl2 = new THREE.DirectionalLight(0xaaffff, 0.95); dl2.position.set(-18, 15, -14); scene.add(dl2);
 
-    const colors = [0xff3366, 0x00eeff, 0xffee44, 0xbb55ff, 0x55ffbb, 0xffaa33, 0xff7733];
+    const colors = [0xff3300, 0x00ccff, 0xffdd00, 0xff00aa, 0x44ff88];
 
     for (let i = 0; i < TOTAL_FLAGS; i++) {
-        const logo = buildCurrickulusLogo(colors[i % colors.length]);
+        const logo = buildLogoMesh(colors[i % colors.length]);
 
         let progress = Math.pow(Math.random(), 0.58);
         const angle = i * 2.399963 + Math.random() * 9;
@@ -152,7 +174,7 @@ function animate() {
         }
 
         // Clean cone with gentle spreading at base (butterfly bloom)
-        const spread = 1 + logo.userData.progress * 0.18;   // wider near bottom
+        const spread = 1 + logo.userData.progress * 0.18;
         const r = logo.userData.progress * BASE_RADIUS * spread;
         const y = APEX_Y - logo.userData.progress * CONE_HEIGHT;
 
@@ -176,7 +198,7 @@ function animate() {
         logo.matrixAutoUpdate = false;
         logo.matrixWorldNeedsUpdate = true;
 
-        // Enhanced breathing + light flutter scale
+        // Breathing + flutter scale
         const breathe = 1 + Math.sin(t * 3.5 + logo.userData.waveOffset) * 0.022;
         logo.scale.setScalar(breathe);
     }
@@ -190,4 +212,4 @@ init();
 animate();
 </script>
 </body>
-</html>
+</html>/html>
