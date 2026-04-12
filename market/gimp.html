@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CURRICKULUS MARKET SUITE</title>
+<style>
+  body { background:#080c10; color:#c8d8e8; font-family:monospace; padding:40px; }
+  .header { font-size:28px; color:#00d4ff; }
+  .price { font-size:48px; color:#00ff88; font-weight:bold; }
+</style>
+</head>
+<body>
+  <div class="header">CURRICKULUS MARKET SUITE</div>
+  <p id="status">Loading real MYMU26 price from MT5...</p>
+  <div class="price" id="price">MYMU26: ---</div>
+
+<script>
+async function loadData() {
+  try {
+  const res = await fetch('/bars');
+    const data = await res.json();
+    if (data && data.length > 0) {
+      const bar = data[data.length-1];
+      document.getElementById('price').textContent = `MYMU26: ${bar.c.toFixed(0)}`;
+      document.getElementById('status').innerHTML = '✅ Real data loaded';
+    }
+  } catch(e) {
+    document.getElementById('status').innerHTML = '❌ Cannot reach VM - check network';
+  }
+}
+loadData();
+</script>
+</body>
+</html>

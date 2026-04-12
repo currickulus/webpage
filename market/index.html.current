@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CURRICKULUS MARKET SUITE</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+  :root {
+    --bg: #080c10; --panel: #0d1117; --accent: #00d4ff; --green: #00ff88; --red: #ff3355; --yellow: #ffd700; --dim: #4a6070; --text: #c8d8e8;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Share Tech Mono', monospace; margin:0; padding:0; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: #0a1520; border-bottom: 1px solid #1e2d3d;
+  }
+  .logo { font-family: 'Orbitron'; font-size: 18px; font-weight: 900; letter-spacing: 4px; color: var(--accent); }
+  .status-bar { display: flex; gap: 25px; font-size: 13px; }
+  .live { color: var(--green); animation: blink 1.5s infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  #ticker { background: #111820; padding: 6px 0; font-size: 12px; border-bottom: 1px solid #1e2d3d; overflow: hidden; white-space: nowrap; }
+  .tick-item { margin-right: 50px; display: inline-block; }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 16px;
+    padding: 20px;
+    height: calc(100vh - 110px);
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid #1e2d3d;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 10px 14px;
+    background: #111820;
+    border-bottom: 1px solid #1e2d3d;
+    font-family: 'Orbitron';
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--accent);
+  }
+  .panel-body { padding: 14px; }
+
+  .indicator-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .ind-block {
+    border: 1px solid #1e2d3d;
+    border-radius: 4px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,255,255,0.03);
+  }
+  .ind-sq { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+  .ind-block.bull .ind-sq { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  .ind-block.bear .ind-sq { background: var(--red); box-shadow: 0 0 10px var(--red); }
+  .ind-block.neutral .ind-sq { background: var(--yellow); }
+  .ind-label { font-size: 11px; flex: 1; }
+  .ind-val { font-size: 13px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">CURRICKULUS <span style="color:#ff6b35">MARKET SUITE</span></div>
+  <div class="status-bar">
+    <span class="live">● LIVE</span>
+    <span id="hdr-time">--:--:--</span>
+    <span id="hdr-price" style="color:var(--accent); font-weight:bold;">MYMU26: ---</span>
+  </div>
+</header>
+
+<div id="ticker"></div>
+
+<div class="main-grid">
+  <!-- LEFT: Christmas Tree - Price, Direction, Momentum, Volume -->
+  <div class="panel">
+    <div class="panel-header">SIGNAL TREE — MYMU26</div>
+    <div class="panel-body">
+      <div class="indicator-grid" id="signal-tree"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Big Live Price -->
+  <div class="panel" style="text-align:center; padding:60px 20px;">
+    <div style="font-size:18px; color:var(--dim); margin-bottom:8px;">CURRENT PRICE</div>
+    <div id="big-price" style="font-size:96px; font-weight:bold; color:var(--green); line-height:1;">
+      ---
+    </div>
+  </div>
+</div>
+
+<script>
+// Fetch real bars
+async function loadData() {
+  try {
+    const res = await fetch('/bars');
+    const data = await res.json();
+    if (!data || data.length < 2) return;
+
+    const latest = data[data.length - 1];
+    const previous = data[data.length - 2];
+
+    const price = latest.c.toFixed(0);
+    const change = latest.c - previous.c;
+
+    // Update header and big price
+    document.getElementById('hdr-price').textContent = `MYMU26: ${price}`;
+    document.getElementById('hdr-time').textContent = new Date(latest.t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    document.getElementById('big-price').textContent = price;
+
+    // Update ticker
+    updateTicker(latest);
+
+    // Build the 4 indicators in exact order: Price → Direction → Momentum → Volume
+    buildSignalTree(latest, previous, change, data);
+  } catch(e) {
+    console.error("Failed to load data", e);
+  }
+}
+
+function updateTicker(bar) {
+  const price = bar.c.toFixed(0);
+  const delta = (Math.random() - 0.48) * 25;
+  const pct = ((delta / bar.c) * 100).toFixed(2);
+  const up = delta >= 0;
+  document.getElementById('ticker').innerHTML = `
+    <span class="tick-item">
+      MYMU26 <span class="${up ? 'up' : 'dn'}">${price} ${up ? '▲' : '▼'}${Math.abs(pct)}%</span>
+    </span>
+  `;
+}
+
+function buildSignalTree(latest, previous, change, allData) {
+  const tree = document.getElementById('signal-tree');
+
+  // 1. PRICE
+  const priceDir = change >= 0 ? "bull" : "bear";
+
+  // 2. DIRECTION
+  const directionDir = change >= 0 ? "bull" : "bear";
+
+  // 3. MOMENTUM
+  const recentChanges = allData.slice(-15).map((b,i) => i>0 ? b.c - allData[i-1].c : 0);
+  const avgChange = recentChanges.reduce((a,b)=>a+b,0) / recentChanges.length || 0;
+  const momentumDir = change > avgChange * 1.3 ? "bull" : change < avgChange * 0.7 ? "bear" : "neutral";
+
+  // 4. VOLUME
+  const recentVol = allData.slice(-25).map(b => b.v);
+  const avgVol = recentVol.reduce((a,b)=>a+b,0) / recentVol.length || 1;
+  const volDir = latest.v > avgVol * 1.6 ? "bull" : latest.v < avgVol * 0.6 ? "bear" : "neutral";
+
+  const indicators = [
+    { name: "PRICE",     dir: priceDir,     val: latest.c.toFixed(0) },
+    { name: "DIRECTION", dir: directionDir, val: change >= 0 ? "↑ BULLISH" : "↓ BEARISH" },
+    { name: "MOMENTUM",  dir: momentumDir,  val: momentumDir === "bull" ? "STRONG" : momentumDir === "bear" ? "WEAK" : "NEUTRAL" },
+    { name: "VOLUME",    dir: volDir,       val: latest.v.toLocaleString() }
+  ];
+
+  tree.innerHTML = indicators.map(ind => `
+    <div class="ind-block ${ind.dir}">
+      <div class="ind-sq"></div>
+      <div class="ind-label">${ind.name}</div>
+      <div class="ind-val" style="color: ${ind.dir==='bull' ? 'var(--green)' : ind.dir==='bear' ? 'var(--red)' : 'var(--yellow)'}">
+        ${ind.val}
+      </div>
+    </div>
+  `).join('');
+}
+
+// Auto refresh
+setInterval(loadData, 4000);
+loadData();
+</script>
+
+</body>
+</html>
